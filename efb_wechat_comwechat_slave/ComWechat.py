@@ -64,7 +64,8 @@ class ComWeChatChannel(SlaveChannel):
         self.logger.info("ComWeChat Slave Channel initialized.")
         self.logger.info("Version: %s" % self.__version__)
         self.config = load_config(efb_utils.get_config_path(self.channel_id))
-        self.bot = WeChatRobot()
+        url = self.config.get("comwechat_url", "http://127.0.0.1:18888")
+        self.bot = WeChatRobot(url)
         self.wxid = self.bot.GetSelfInfo()["data"]["wxId"]
         self.base_path = self.bot.get_base_path()
         self.dir = self.config["dir"]

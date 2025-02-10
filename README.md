@@ -21,3 +21,11 @@ docker pull honus/efb-wechat-comwechat-slave:latest
 
 /getstaticinfo - 可获取friends, groups, contacts信息
 ```
+
+原版基础上新增 1 个配置，允许多开 comwechat，需要配合 `https://github.com/jiz4oh/python-comwechatrobot-http` 使用
+
+```
+#多开请将端口号修改为其他值，避免冲突
+#比如 18888 => 18889
+comwechat_url: http://127.0.0.1:18888
+```
