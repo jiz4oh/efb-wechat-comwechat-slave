@@ -552,6 +552,7 @@ class ComWeChatChannel(SlaveChannel):
                     if flag:
                         m = MsgProcess(msg, chat)
                         m.commands = MessageCommands(commands)
+                        m.vendor_specific["wechat_msgtype"] = msg_type
                         del self.file_msg[path]
                         self.send_efb_msgs(m, author=author, chat=chat, uid=msg['msgid'])
 
@@ -567,45 +568,48 @@ class ComWeChatChannel(SlaveChannel):
                         del self.delete_file[file_path]
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
-        try:
-            res = self.bot.GetCdn(msgid=msgid)
-            if res["msg"] == 1:
-                path = res["path"].replace("\\","/").replace("C:/users/user/My Documents/WeChat Files/", self.dir )
-                count = 1
-                while True:
-                    if os.path.exists(path):
-                        break
-                    elif count > self.time_out:
-                        self.logger.warning(f"Timeout when retrying download {msgid}.")
-                        return
-                    count += 1
-                    time.sleep(1)
+        file = self.GetMsgCdn(msgid)
+        efb_msgs = self._build_media_msg(msgtype, file)
+        if not efb_msgs:
+            return f"[msg type {msg_type} 非法]"
+        efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
+        if chattype == "group":
+            c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+                uid = chatuid,
+            ))
+        elif chattype == "private":
+            c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                uid = chatuid
+            ))
+        else:
+            return f"[chat type {chattype} 非法]"
+        master_message = coordinator.master.get_message_by_id(chat=c, msg_id=msgid)
+        self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
+        return "下载成功"
 
-                file = load_local_file_to_temp(path)
-                if msgtype == "image":
-                    efb_msgs = efb_image_wrapper(file)
-                elif msgtype == "share":
-                    efb_msgs = efb_file_wrapper(file, os.path.basename(path))
-                elif msgtype == "voice":
-                    efb_msgs = efb_voice_wrapper(file , file.name + ".ogg")
-                elif msgtype == "video":
-                    efb_msgs = efb_video_wrapper(file)
-                if chattype == "group":
-                    c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                        uid = chatuid,
-                    ))
-                elif chattype == "private":
-                    c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                        uid = chatuid
-                    ))
-                else:
-                    self.logger.warning(f"Unknown chat type {chattype} when retrying download {msgid}.")
-                    return
-                master_message = coordinator.master.get_message_by_id(chat=c, msg_id=msgid)
-                efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
-                self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
-        except Exception as e:
-            self.logger.warning(f"Error occurred when retrying download {msgid}. {e}")
+    def retry_download_target(self, target: Message = None):
+        file = self.GetMsgCdn(target.uid)
+        msgtype = target.vendor_specific.get("wechat_msgtype", None)
+        efb_msgs = self._build_media_msg(msgtype, file)
+        if not efb_msgs:
+            return
+        efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
+
+        author = target.author
+        chat = target.chat
+        self.send_efb_msgs(efb_msgs, uid=msgid, author=author, chat=chat, edit=True, edit_media=True)
+
+    def _build_media_msg(self, msgtype, file):
+        if msgtype == "image":
+            return efb_image_wrapper(file)
+        elif msgtype == "share":
+            return efb_file_wrapper(file, os.path.basename(path))
+        elif msgtype == "voice":
+            return efb_voice_wrapper(file , file.name + ".ogg")
+        elif msgtype == "video":
+            return efb_video_wrapper(file)
+        else:
+            return
 
     def process_friend_request(self , v3 , v4):
         self.logger.debug(f"process_friend_request:{v3} {v4}")
@@ -777,6 +781,13 @@ class ComWeChatChannel(SlaveChannel):
                     res = self.bot.SendAt(chatroom_id = chat_uid, wxids = users, msg = message)
                 else:
                     self.bot.SendText(wxid = chat_uid , msg = msg.text)
+            elif msg.text.startswith('/retry'):
+                if isinstance(msg.target, Message):
+                    self.retry_download_target(target=msg.target)
+                    return msg
+                else:
+                    message = "回复超时消息时使用"
+                    self.system_msg({'sender':chat_uid, 'message':message})
             elif msg.text.startswith('/sendcard'):
                 user_nickname = msg.text[10::].split(' ', 1)
                 if len(user_nickname) == 2:
@@ -911,6 +922,25 @@ class ComWeChatChannel(SlaveChannel):
             else:
                 name = wxid
         return name
+
+    def GetMsgCdn(self, msgid):
+        try:
+            res = self.bot.GetCdn(msgid=msgid)
+            if res["msg"] == 1:
+                path = res["path"].replace("\\","/").replace("C:/users/user/My Documents/WeChat Files/", self.dir )
+                count = 1
+                while True:
+                    if os.path.exists(path):
+                        break
+                    elif count > self.time_out:
+                        self.logger.warning(f"Timeout when retrying download {msgid}.")
+                        return
+                    count += 1
+                    time.sleep(1)
+
+                return load_local_file_to_temp(path)
+        except Exception as e:
+            self.logger.warning(f"Error occurred when retrying download {msgid}. {e}")
 
     #定时更新 Start
     def GetContactListBySql(self):
