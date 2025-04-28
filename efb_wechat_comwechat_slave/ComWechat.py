@@ -491,7 +491,8 @@ class ComWeChatChannel(SlaveChannel):
                 msg["filepath"] = f'''{self.dir}{msg["filepath"]}'''
                 self.file_msg[msg["filepath"]] = ( msg , author , chat )
                 return
-        except:
+        except Exception as e:
+            self.logger.warning(f"Failed to process file msg: {e}")
             ...
 
         if msg["type"] == "voice":
@@ -514,10 +515,10 @@ class ComWeChatChannel(SlaveChannel):
                     author: ChatMember = self.file_msg[path][1]
                     chat : Chat= self.file_msg[path][2]
                     commands = []
+                    msg_type = msg["type"]
                     if os.path.exists(path):
                         flag = True
                     elif (int(time.time()) - msg["timestamp"]) > self.time_out:
-                        msg_type = msg["type"]
                         msg['message'] = f"[{msg_type} 下载超时,请在手机端查看]"
                         msg["type"] = "text"
                         chattype = "Unknown"
@@ -551,7 +552,8 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         m = MsgProcess(msg, chat)
-                        m.commands = MessageCommands(commands)
+                        if commands: 
+                            m.commands = MessageCommands(commands)
                         m.vendor_specific["wechat_msgtype"] = msg_type
                         del self.file_msg[path]
                         self.send_efb_msgs(m, author=author, chat=chat, uid=msg['msgid'])
