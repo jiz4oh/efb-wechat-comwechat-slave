@@ -213,7 +213,7 @@ class ComWeChatChannel(SlaveChannel):
                 return
 
             if msgid in self.cache:
-                self.logger.warning("self msg due to buf from upstream.")
+                self.logger.warning("self msg due to bug from upstream.")
                 return
 
             key = None
