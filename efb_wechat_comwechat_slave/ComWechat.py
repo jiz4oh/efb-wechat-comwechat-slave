@@ -615,6 +615,7 @@ class ComWeChatChannel(SlaveChannel):
         elif msgtype == "video":
             return efb_video_wrapper(file)
         else:
+            self.logger.warn(f"[msg type {msgtype} 非法]")
             return
 
     def process_friend_request(self , v3 , v4):
@@ -939,11 +940,12 @@ class ComWeChatChannel(SlaveChannel):
                     if os.path.exists(path):
                         break
                     elif count > self.time_out:
-                        self.logger.warning(f"Timeout when retrying download {msgid}.")
+                        self.logger.warning(f"Timeout when retrying download {msgid} at {path}.")
                         return
                     count += 1
                     time.sleep(1)
 
+                self.logger.debug(f"Download {path} successfully.")
                 return path
         except Exception as e:
             self.logger.warning(f"Error occurred when retrying download {msgid}. {e}")
