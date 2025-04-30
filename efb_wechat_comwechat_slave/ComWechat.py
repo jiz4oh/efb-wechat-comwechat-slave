@@ -571,13 +571,9 @@ class ComWeChatChannel(SlaveChannel):
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
         path = self.GetMsgCdn(msgid)
-        if not path:
-            return "下载失败"
-        file = load_local_file_to_temp(path)
-        filename = os.path.basename(path)
-        efb_msgs = self._build_media_msg(msgtype, file, filename)
+        efb_msgs = self._build_media_msg(msgtype, path)
         if not efb_msgs:
-            return f"[msg type {msg_type} 非法]"
+            return f"[下载失败]"
         efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
         if chattype == "group":
             c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
@@ -588,19 +584,15 @@ class ComWeChatChannel(SlaveChannel):
                 uid = chatuid
             ))
         else:
-            return f"[chat type {chattype} 非法]"
+            return f"[unsupported chat type: {chattype}]"
         master_message = coordinator.master.get_message_by_id(chat=c, msg_id=msgid)
         self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
         path = self.GetMsgCdn(target.uid)
-        if not path:
-            return
-        file = load_local_file_to_temp(path)
-        filename = os.path.basename(path)
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
-        efb_msgs = self._build_media_msg(msgtype, file, filename)
+        efb_msgs = self._build_media_msg(msgtype, path)
         if not efb_msgs:
             return
         efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
@@ -609,17 +601,19 @@ class ComWeChatChannel(SlaveChannel):
         chat = target.chat
         self.send_efb_msgs(efb_msgs, uid=msgid, author=author, chat=chat, edit=True, edit_media=True)
 
-    def _build_media_msg(self, msgtype, file, filename = None):
+    def _build_media_msg(self, msgtype, path):
+        if not path:
+            return
+        file = load_local_file_to_temp(path)
+        filename = os.path.basename(path)
         if msgtype == "image":
             return efb_image_wrapper(file)
-        elif msgtype == "share":
-            return efb_file_wrapper(file, filename or file.name)
         elif msgtype == "voice":
             return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
         elif msgtype == "video":
             return efb_video_wrapper(file)
         else:
-            self.logger.warn(f"[msg type {msgtype} 非法]")
+            self.logger.warn(f"[unsupported type: {msgtype}]")
             return
 
     def process_friend_request(self , v3 , v4):
