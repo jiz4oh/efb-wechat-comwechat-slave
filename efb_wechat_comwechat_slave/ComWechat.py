@@ -33,7 +33,7 @@ from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice_wrapper, efb_video_wrapper
 from .MsgProcess import MsgProcess
-from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, load_local_file_to_temp
+from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, load_local_file_to_temp, convert_silk_to_mp3
 
 from rich.console import Console
 from rich import print as rprint
@@ -570,8 +570,10 @@ class ComWeChatChannel(SlaveChannel):
                         del self.delete_file[file_path]
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
-        file = self.GetMsgCdn(msgid)
-        efb_msgs = self._build_media_msg(msgtype, file)
+        path = self.GetMsgCdn(msgid)
+        file = load_local_file_to_temp(path)
+        filename = os.path.basename(path)
+        efb_msgs = self._build_media_msg(msgtype, file, filename)
         if not efb_msgs:
             return f"[msg type {msg_type} 非法]"
         efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
@@ -590,9 +592,11 @@ class ComWeChatChannel(SlaveChannel):
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
-        file = self.GetMsgCdn(target.uid)
+        path = self.GetMsgCdn(target.uid)
+        file = load_local_file_to_temp(path)
+        filename = os.path.basename(path)
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
-        efb_msgs = self._build_media_msg(msgtype, file)
+        efb_msgs = self._build_media_msg(msgtype, file, filename)
         if not efb_msgs:
             return
         efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
@@ -601,13 +605,13 @@ class ComWeChatChannel(SlaveChannel):
         chat = target.chat
         self.send_efb_msgs(efb_msgs, uid=msgid, author=author, chat=chat, edit=True, edit_media=True)
 
-    def _build_media_msg(self, msgtype, file):
+    def _build_media_msg(self, msgtype, file, filename = None):
         if msgtype == "image":
             return efb_image_wrapper(file)
         elif msgtype == "share":
-            return efb_file_wrapper(file, os.path.basename(path))
+            return efb_file_wrapper(file, filename or file.name)
         elif msgtype == "voice":
-            return efb_voice_wrapper(file , file.name + ".ogg")
+            return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
         elif msgtype == "video":
             return efb_video_wrapper(file)
         else:
@@ -940,7 +944,7 @@ class ComWeChatChannel(SlaveChannel):
                     count += 1
                     time.sleep(1)
 
-                return load_local_file_to_temp(path)
+                return path
         except Exception as e:
             self.logger.warning(f"Error occurred when retrying download {msgid}. {e}")
 
