@@ -571,6 +571,8 @@ class ComWeChatChannel(SlaveChannel):
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
         path = self.GetMsgCdn(msgid)
+        if not path:
+            return "下载失败"
         file = load_local_file_to_temp(path)
         filename = os.path.basename(path)
         efb_msgs = self._build_media_msg(msgtype, file, filename)
@@ -593,6 +595,8 @@ class ComWeChatChannel(SlaveChannel):
 
     def retry_download_target(self, target: Message = None):
         path = self.GetMsgCdn(target.uid)
+        if not path:
+            return
         file = load_local_file_to_temp(path)
         filename = os.path.basename(path)
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
