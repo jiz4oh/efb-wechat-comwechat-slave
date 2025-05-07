@@ -426,7 +426,7 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                         ))
                     # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
                     master_message = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
-                except Exception as e:
+                except NotImplementedError as e:
                     pass
             if refer_displayname is not None:
                 prefix = f"{refer_displayname}:"
