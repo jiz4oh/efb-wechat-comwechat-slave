@@ -410,7 +410,7 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
             )
             prefix = ""
             master_message = False
-            if refer_svrid is not None:
+            if refer_svrid is not None and refer_chatusr == message["self"]:
                 try:
                     if "@chatroom" in refer_fromusr:
                         c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
