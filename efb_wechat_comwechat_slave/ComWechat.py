@@ -608,6 +608,8 @@ class ComWeChatChannel(SlaveChannel):
         filename = os.path.basename(path)
         if msgtype == "image":
             return efb_image_wrapper(file)
+        elif msgtype == "share":
+            return efb_file_wrapper(file, filename or file.name)
         elif msgtype == "voice":
             return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
         elif msgtype == "video":
