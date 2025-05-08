@@ -31,7 +31,7 @@ from ehforwarderbot.status import MessageRemoval
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
-from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice_wrapper, efb_video_wrapper
+from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice_wrapper, efb_video_wrapper, efb_text_simple_wrapper
 from .MsgProcess import MsgProcess
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, load_local_file_to_temp, convert_silk_to_mp3
 
@@ -603,7 +603,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def _build_media_msg(self, msgtype, path):
         if not path:
-            return
+            return efb_text_simple_wrapper(f"[重试 {msgtype} 失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
         file = load_local_file_to_temp(path)
         filename = os.path.basename(path)
         if msgtype == "image":
