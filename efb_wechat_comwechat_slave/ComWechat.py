@@ -181,7 +181,7 @@ class ComWeChatChannel(SlaveChannel):
         self.pending_lock = threading.Lock()
         self._file_locks: Dict[ChatID, threading.Lock] = {} # Locks for file operations per chat
         self._file_locks_lock = threading.Lock() # Lock for accessing _file_locks dict
-        self.send_timeout = self.config.get("send_timeout", 5) # Timeout for waiting send confirmation
+        self.send_timeout = self.config.get("send_timeout", 60) # Timeout for waiting send confirmation
 
         self.qr_url = ""
         self.master_qr_picture_id: Optional[str] = None
