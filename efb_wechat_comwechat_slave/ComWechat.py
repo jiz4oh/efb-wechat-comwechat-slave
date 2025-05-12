@@ -32,21 +32,119 @@ from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text
 from .MsgProcess import MsgProcess
-from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION
+from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 
 from rich.console import Console
 from rich import print as rprint
 from io import BytesIO
 from PIL import Image
 from pyqrcode import QRCode
+from typing import Callable
 
-QUOTE_MESSAGE = '<?xml version="1.0"?><msg><appmsg appid="" sdkver="0"><title>%s</title><des /><action /><type>57</type><showtype>0</showtype><soundtype>0</soundtype><mediatagname /><messageext /><messageaction /><content /><contentattr>0</contentattr><url /><lowurl /><dataurl /><lowdataurl /><songalbumurl /><songlyric /><appattach><totallen>0</totallen><attachid /><emoticonmd5 /><fileext /><aeskey /></appattach><extinfo /><sourceusername /><sourcedisplayname /><thumburl /><md5 /><statextstr /><refermsg><type>1</type><svrid>%s</svrid><fromusr>%s</fromusr><chatusr /></refermsg></appmsg><fromusername>%s</fromusername><scene>0</scene><appinfo><version>1</version><appname></appname></appinfo><commenturl></commenturl></msg>'
-QUOTE_GROUP_MESSAGE = '<?xml version="1.0"?><msg><appmsg appid="" sdkver="0"><title>%s</title><des /><action /><type>57</type><showtype>0</showtype><soundtype>0</soundtype><mediatagname /><messageext /><messageaction /><content /><contentattr>0</contentattr><url /><lowurl /><dataurl /><lowdataurl /><songalbumurl /><songlyric /><appattach><totallen>0</totallen><attachid /><emoticonmd5 /><fileext /><aeskey /></appattach><extinfo /><sourceusername /><sourcedisplayname /><thumburl /><md5 /><statextstr /><refermsg><type>1</type><svrid>%s</svrid><fromusr>%s</fromusr><chatusr>%s</chatusr></refermsg></appmsg><fromusername>%s</fromusername><scene>0</scene><appinfo><version>1</version><appname></appname></appinfo><commenturl></commenturl></msg>'
+QUOTE_GROUP_MESSAGE="""<msg>
+    <fromusername>%s</fromusername>
+    <scene>0</scene>
+    <commenturl></commenturl>
+    <appmsg appid="" sdkver="0">
+        <title>%s</title>
+        <des></des>
+        <action>view</action>
+        <type>57</type>
+        <showtype>0</showtype>
+        <content></content>
+        <url></url>
+        <dataurl></dataurl>
+        <lowurl></lowurl>
+        <lowdataurl></lowdataurl>
+        <recorditem></recorditem>
+        <thumburl></thumburl>
+        <messageaction></messageaction>
+        <refermsg>
+            <type>1</type>
+            <svrid>%s</svrid>
+            <fromusr>%s</fromusr>
+            <chatusr>%s</chatusr>
+        </refermsg>
+        <extinfo></extinfo>
+        <sourceusername></sourceusername>
+        <sourcedisplayname></sourcedisplayname>
+        <commenturl></commenturl>
+        <appattach>
+            <totallen>0</totallen>
+            <attachid></attachid>
+            <emoticonmd5></emoticonmd5>
+            <fileext></fileext>
+            <aeskey></aeskey>
+        </appattach>
+        <weappinfo>
+            <pagepath></pagepath>
+            <username></username>
+            <appid></appid>
+            <appservicetype>0</appservicetype>
+        </weappinfo>
+        <websearch />
+    </appmsg>
+    <appinfo>
+        <version>1</version>
+        <appname>Window wechat</appname>
+    </appinfo>
+</msg>
+"""
+QUOTE_MESSAGE="""<msg>
+    <fromusername>%s</fromusername>
+    <scene>0</scene>
+    <commenturl></commenturl>
+    <appmsg appid="" sdkver="0">
+        <title>%s</title>
+        <des></des>
+        <action>view</action>
+        <type>57</type>
+        <showtype>0</showtype>
+        <content></content>
+        <url></url>
+        <dataurl></dataurl>
+        <lowurl></lowurl>
+        <lowdataurl></lowdataurl>
+        <recorditem></recorditem>
+        <thumburl></thumburl>
+        <messageaction></messageaction>
+        <refermsg>
+            <type>1</type>
+            <svrid>%s</svrid>
+            <fromusr>%s</fromusr>
+            <chatusr />
+        </refermsg>
+        <extinfo></extinfo>
+        <sourceusername></sourceusername>
+        <sourcedisplayname></sourcedisplayname>
+        <commenturl></commenturl>
+        <appattach>
+            <totallen>0</totallen>
+            <attachid></attachid>
+            <emoticonmd5></emoticonmd5>
+            <fileext></fileext>
+            <aeskey></aeskey>
+        </appattach>
+        <weappinfo>
+            <pagepath></pagepath>
+            <username></username>
+            <appid></appid>
+            <appservicetype>0</appservicetype>
+        </weappinfo>
+        <websearch />
+    </appmsg>
+    <appinfo>
+        <version>1</version>
+        <appname>Window wechat</appname>
+    </appinfo>
+</msg>
+"""
 
 class ComWeChatChannel(SlaveChannel):
     channel_name : str = "ComWechatChannel"
     channel_emoji : str = "💻"
     channel_id : str = "honus.comwechat"
+    file_lock_key = "__file_op__"
 
     bot : WeChatRobot = None
     config : Dict = {}
@@ -77,6 +175,14 @@ class ComWeChatChannel(SlaveChannel):
         self.config = load_config(efb_utils.get_config_path(self.channel_id))
         self.bot = WeChatRobot()
 
+        # Mechanism for waiting for send confirmation
+        self.sent_msgs: Dict[str, threading.Event]  = {}
+        self.sent_msg_results: Dict[str, MessageID] = {}   # key -> msgid
+        self.pending_lock = threading.Lock()
+        self._file_locks: Dict[ChatID, threading.Lock] = {} # Locks for file operations per chat
+        self._file_locks_lock = threading.Lock() # Lock for accessing _file_locks dict
+        self.send_timeout = self.config.get("send_timeout", 5) # Timeout for waiting send confirmation
+
         self.qr_url = ""
         self.master_qr_picture_id: Optional[str] = None
         self.user_auth_chat = SystemChat(channel=self,
@@ -91,6 +197,45 @@ class ComWeChatChannel(SlaveChannel):
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
         ChatMgr.slave_channel = self
+
+        @self.bot.on("sent_msg")
+        def on_sent_msg(msg: Dict):
+            """Callback for messages sent by the bot (potentially from other devices or API)."""
+            self.logger.debug(f"on_sent_msg received: {msg}")
+            sender: str = msg.get("sender")
+            msgid = msg.get("msgid")
+            message_content = msg.get("message")
+            filepath = msg.get("filepath")
+            msg_type = msg.get("type")
+
+            if not sender or not msgid:
+                self.logger.warning("on_sent_msg missing sender or msgid.")
+                return
+
+            if msgid in self.cache:
+                self.logger.warning("self msg due to buf from upstream.")
+                return
+
+            key = None
+            with self.pending_lock:
+                if message_content:
+                    potential_key_text = (sender, message_content)
+                    if potential_key_text in self.sent_msgs:
+                        key = potential_key_text
+
+                if filepath:
+                    potential_key_file = (sender, None, self.file_lock_key)
+                    if potential_key_file in self.sent_msgs:
+                        key = potential_key_file
+                        self.logger.debug(f"Found pending file operation for key: {key}")
+
+                if key and key in self.sent_msgs:
+                    event = self.sent_msgs[key]
+                    self.sent_msg_results[key] = MessageID(str(msgid))
+                    event.set()
+                    self.logger.debug(f"Matched sent message {key} with msgid {msgid}. Signaled event.")
+                else:
+                    self.logger.warning(f"No pending message found matching sender {sender}, content/filepath.")
 
         @self.bot.on("self_msg")
         def on_self_msg(msg : Dict):
@@ -617,6 +762,8 @@ class ComWeChatChannel(SlaveChannel):
                     self.logger.debug(f"非本 slave 消息: {match.group(1)}/{match.group(2)}")
                 return msg
 
+        res= {"msg": "1"}
+        msg_ids: list[MessageID] = []
         if msg.type == MsgType.Voice:
             f = tempfile.NamedTemporaryFile(prefix='voice_message_', suffix=".mp3")
             AudioSegment.from_ogg(msg.file.name).export(f, format="mp3")
@@ -712,9 +859,10 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     users, message = users_message[0], ''
                 if users != '':
+                    #TODO get msgid for SendAt
                     res = self.bot.SendAt(chatroom_id = chat_uid, wxids = users, msg = message)
                 else:
-                    self.bot.SendText(wxid = chat_uid , msg = msg.text)
+                    msg_ids.append(self.send_text(chat_uid, msg.text))
             elif msg.text.startswith('/sendcard'):
                 user_nickname = msg.text[10::].split(' ', 1)
                 if len(user_nickname) == 2:
@@ -722,82 +870,133 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     user, nickname = user_nickname[0], ''
                 if user != '':
+                    #TODO get msgid for SendCard
                     res = self.bot.SendCard(receiver = chat_uid, share_wxid = user, nickname = nickname)
                 else:
-                    self.bot.SendText(wxid = chat_uid , msg = msg.text)
-            elif msg.text.startswith('/addfriend'):
-                user_invite = msg.text[11::].split(' ', 1)
-                if len(user_invite) == 2:
-                    user, invite = user_invite
-                else:
-                    user, invite = user_invite[0], ''
-                if user != '':
-                    res = self.bot.AddContactByWxid(wxid = user, msg = invite)
-                else:
-                    self.bot.SendText(wxid = chat_uid , msg = msg.text)
+                    msg_ids.append(self.send_text(chat_uid, msg))
             else:
-                res = self.send_text(wxid = chat_uid , msg = msg)
+                # Standard text message or quote reply
+                msg_ids.append(self.send_text(chat_uid, msg))
         elif msg.type in [MsgType.Link]:
-            self.send_text(wxid = chat_uid , msg = msg)
-        elif msg.type in [MsgType.Image , MsgType.Sticker]:
-            name = os.path.basename(msg.file.name)
-            local_path =f"{self.dir}{self.wxid}/{name}"
-            load_temp_file_to_local(msg.file, local_path)
-            img_path = self.base_path + "\\" + self.wxid + "\\" + name
-            res = self.bot.SendImage(receiver = chat_uid , img_path = img_path)
-            self.delete_file[local_path] = int(time.time())
+            msg_ids.append(self.send_text(chat_uid, msg))
+        elif msg.type in [MsgType.Image, MsgType.Sticker]:
+            msg_ids.append(self.send_image(chat_uid, msg))
             if msg.text:
-                self.send_text(wxid = chat_uid , msg = msg)
-        elif msg.type in [MsgType.File , MsgType.Video]:
-            name = os.path.basename(msg.file.name)
-            local_path = f"{self.dir}{self.wxid}/{name}"
-            load_temp_file_to_local(msg.file, local_path)
-            file_path = self.base_path + "\\" + self.wxid + "\\" + name
-            if msg.filename:
-                try:
-                    os.rename(local_path , f"{self.dir}{self.wxid}/{msg.filename}")
-                except:
-                    os.replace(local_path , f"{self.dir}{self.wxid}/{msg.filename}")
-                local_path = f"{self.dir}{self.wxid}/{msg.filename}"
-                file_path = self.base_path + "\\" + self.wxid + "\\" + msg.filename
-            res = self.bot.SendFile(receiver = chat_uid , file_path = file_path)
-            self.delete_file[local_path] = int(time.time())
+                msg_ids.append(self.send_text(chat_uid, msg))
+        elif msg.type in [MsgType.File, MsgType.Video]:
+            msg_ids.append(self.send_file(chat_uid, msg))
             if msg.text:
-                self.send_text(wxid = chat_uid , msg = msg)
-            if msg.type == MsgType.Video:
-                res["msg"] = 1
+                msg_ids.append(self.send_text(chat_uid, msg))
         elif msg.type in [MsgType.Animation]:
-            name = os.path.basename(msg.file.name)
-            local_path = f"{self.dir}{self.wxid}/{name}"
-            load_temp_file_to_local(msg.file, local_path)
-            file_path = self.base_path + "\\" + self.wxid + "\\" + local_path.split("/")[-1]
-            res = self.bot.SendEmotion(wxid = chat_uid , img_path = file_path)
-            self.delete_file[local_path] = int(time.time())
+            msg_ids.append(self.send_emotion(chat_uid, msg))
             if msg.text:
-                self.send_text(wxid = chat_uid , msg = msg)
+                msg_ids.append(self.send_text(chat_uid, msg))
 
-        try:
-            if str(res["msg"]) == "0":
-                self.system_msg({'sender':chat_uid, 'message':"发送失败，请在手机端确认"})
-        except:
-            ...
+        ids = [item for item in msg_ids if item is not None]
+        if not (str(res.get("msg", "1")) == "0" or ids):
+            self.logger.warning(f"Failed to get msgid confirmation for message type {msg.type} to {chat_uid} with {msg.uid}")
+            self.system_msg({'sender': chat_uid, 'message':f"发送消息失败，请在手机端确认"})
+        elif ids:
+            # 保存所有消息 id 以在撤回消息时使用
+            msg.uid = dump_message_ids(ids)
+
         return msg
 
-    def send_text(self, wxid: ChatID, msg: Message) -> 'Message':
-        text = msg.text
-        if isinstance(msg.target, Message):
-                if isinstance(msg.target.author, SelfChatMember) and isinstance(msg.target.deliver_to, SlaveChannel):
-                    qt_txt = msg.target.text or msg.target.type.name
-                    text = qutoed_text(qt_txt, msg.text)
-                else:
-                    msgid = msg.target.uid
-                    sender = msg.target.author.uid
-                    if "@chatroom" in msg.author.chat.uid:
-                        xml = QUOTE_GROUP_MESSAGE % (text, msgid, sender, msg.author.chat.uid, self.wxid)
-                    else:
-                        xml = QUOTE_MESSAGE % (text, msgid, sender, self.wxid)
-                    return self.bot.SendXml(wxid = wxid , xml = xml, img_path = "")
-        return self.bot.SendText(wxid = wxid , msg = text)
+    def _get_file_lock(self, wxid: ChatID) -> threading.Lock:
+        """Gets or creates a lock for the given chat ID."""
+        with self._file_locks_lock:
+            if wxid not in self._file_locks:
+                self._file_locks[wxid] = threading.Lock()
+            return self._file_locks[wxid]
+
+    def _wait(self, key: Any, timeout: int) -> Optional[MessageID]:
+        """Waits for the event associated with key and returns the msgid."""
+        event = self.sent_msgs.get(key)
+        if not event:
+            self.logger.error(f"No event found for key {key} before waiting.")
+            return None
+
+        self.logger.debug(f"Waiting for event for key: {key} with timeout {timeout}s")
+        event_set = event.wait(timeout=timeout)
+
+        with self.pending_lock:
+            # Always remove the key from pending and results after waiting or timeout
+            self.sent_msgs.pop(key, None)
+            received_msgid = self.sent_msg_results.pop(key, None)
+
+        if not event_set:
+            self.logger.warning(f"Timeout waiting for send confirmation for key: {key}")
+            return None
+
+        if not received_msgid:
+            self.logger.error(f"Event signaled for key {key}, but no msgid found in results.")
+            return None
+
+        self.logger.debug(f"Successfully received msgid {received_msgid} for key {key}")
+        return received_msgid
+
+    def send_text(self, wxid: ChatID, msg: Message):
+        """Sends a text message and waits for confirmation."""
+        text_to_send = msg.text
+        key = None
+
+        if isinstance(msg.target, Message) and text_to_send:
+            msgid = msg.target.uid
+            sender = msg.target.author.uid
+            ids = load_message_ids(msgid)
+            # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
+            msgid = ids[0]
+            if "@chatroom" in msg.author.chat.uid:
+                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid)
+            else:
+                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender)
+            key = (wxid, xml)
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+            self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
+        else:
+            key = (wxid, text_to_send)
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+            self.bot.SendText(wxid=wxid, msg=text_to_send)
+
+        return self._wait(key, self.send_timeout)
+
+    def _save_file(self, msg: Message, rename: bool = False):
+        name = os.path.basename(msg.file.name)
+        if rename and msg.filename and msg.filename != name:
+            name = msg.filename
+
+        local_path = f"{self.dir}{self.wxid}/{name}"
+        load_temp_file_to_local(msg.file, local_path)
+        self.delete_file[local_path] = int(time.time())
+        return self.base_path + "\\" + self.wxid + "\\" + name
+
+    @staticmethod
+    def _send_file_with_lock(fn: Callable):
+        def deco(self, wxid: ChatID, msg: Message):
+            key = (wxid, None, self.file_lock_key)
+
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+
+            with self._get_file_lock(wxid):
+                fn(self, wxid, msg)
+
+                return self._wait(key, self.send_timeout)
+        return deco
+
+    @_send_file_with_lock
+    def send_image(self, wxid: ChatID, msg: Message):
+        self.bot.SendImage(receiver=wxid, img_path=self._save_file(msg))
+
+    @_send_file_with_lock
+    def send_file(self, wxid: ChatID, msg: Message):
+        self.bot.SendFile(receiver=wxid, file_path=self._save_file(msg, True))
+
+    @_send_file_with_lock
+    def send_emotion(self, wxid: ChatID, msg: Message):
+        self.bot.SendEmotion(wxid=wxid, img_path=self._save_file(msg))
 
     def get_chat_picture(self, chat: 'Chat') -> BinaryIO:
         wxid = chat.uid
@@ -807,7 +1006,7 @@ class ComWeChatChannel(SlaveChannel):
         else:
             return None
 
-    def get_chat_member_picture(self, chat_member: 'ChatMember') -> BinaryIO:
+    def get_chat_member_picture(self, chat_member: 'ChatMember') -> Optional[BinaryIO]:
         wxid = chat_member.uid
         result = self.bot.GetPictureBySql(wxid = wxid)
         if result:
@@ -827,6 +1026,8 @@ class ComWeChatChannel(SlaveChannel):
         t.start()
 
     def send_status(self, status: 'Status'):
+        #TODO 撤回消息
+        #self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
         ...
 
     def stop_polling(self):

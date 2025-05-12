@@ -409,26 +409,32 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 vendor_specific={ "is_refer": True }
             )
             prefix = ""
-            if "@chatroom" in refer_fromusr:
-                chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                    uid = refer_fromusr,
-                ))
-            else:
-                chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                    uid = refer_chatusr,
-                ))
             sent_by_master = True
             if refer_svrid is not None:
                 try:
+                    if "@chatroom" in refer_fromusr:
+                        c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+                            uid = refer_chatusr,
+                        ))
+                    elif refer_chatusr == "__self__":
+                        c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                            uid = message["self"],
+                        ))
+                    else:
+                        c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                            uid = refer_chatusr or refer_fromusr,
+                        ))
                     # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
-                    master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=refer_svrid)
+                    master_message = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
                     if master_message is not None:
                         sent_by_master = False
-                except:
+                except Exception as e:
                     pass
             if refer_displayname is not None:
                 prefix = f"{refer_displayname}:"
             if refer_svrid is None or (refer_chatusr == message["self"] and sent_by_master):
+                #TODO 因为微信会将视频/文件等拆分成多条消息，refer_svrid 对应的可能是 slave_message_id 的一部分
+                #可以考虑直接将 refer_svrid 作为 target.uid，不过在回复富文本消息的时候 target.uid 是无效状态
                 if refer_msgType == 1: # 被引用的消息是文本
                     refer_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息内容
                     result_text = qutoed_text(refer_content, msg, prefix)
