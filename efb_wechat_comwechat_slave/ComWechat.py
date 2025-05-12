@@ -895,7 +895,11 @@ class ComWeChatChannel(SlaveChannel):
         ids = [item for item in msg_ids if item is not None]
         if not (str(res.get("msg", "1")) == "0" or ids):
             self.logger.warning(f"Failed to get msgid confirmation for message type {msg.type} to {chat_uid} with {msg.uid}")
-            self.system_msg({'sender': chat_uid, 'message':f"发送消息失败，请在手机端确认"})
+            target = Message(
+                uid=MessageID(msg.uid),
+                chat=msg.chat,
+            )
+            self.system_msg({'sender': chat_uid, 'message':f"发送消息失败，请在手机端确认", 'target': target})
         elif ids:
             # 保存所有消息 id 以在撤回消息时使用
             msg.uid = dump_message_ids(ids)
