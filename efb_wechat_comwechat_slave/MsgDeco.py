@@ -412,15 +412,15 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
             master_message = False
             if refer_svrid is not None and refer_chatusr == message["self"]:
                 try:
-                    if "@chatroom" in refer_fromusr:
+                    if "@chatroom" in refer_fromusr:  # 群聊中回复的消息
                         c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
                             uid = refer_chatusr,
                         ))
-                    elif refer_chatusr == "__self__":
+                    elif refer_chatusr == message["self"]:  # 其他人从私聊中回复我发送的消息
                         c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                            uid = message["self"],
+                            uid = message["wxid"],
                         ))
-                    else:
+                    else:  # 我在私聊中回复其他人的消息
                         c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                             uid = refer_chatusr or refer_fromusr,
                         ))
