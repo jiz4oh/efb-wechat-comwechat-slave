@@ -414,15 +414,11 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 try:
                     if "@chatroom" in refer_fromusr:  # 群聊中回复的消息
                         c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                            uid = refer_chatusr,
+                            uid = message["sender"],
                         ))
-                    elif refer_chatusr == message["self"]:  # 其他人从私聊中回复我发送的消息
+                    else:
                         c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                            uid = message["wxid"],
-                        ))
-                    else:  # 我在私聊中回复其他人的消息
-                        c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                            uid = refer_chatusr or refer_fromusr,
+                            uid = message["sender"],
                         ))
                     # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
                     master_message = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
