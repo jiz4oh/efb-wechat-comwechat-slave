@@ -833,6 +833,17 @@ class ComWeChatChannel(SlaveChannel):
         ...
 
     def get_message_by_id(self, chat: 'Chat', msg_id: MessageID) -> Optional['Message']:
+        sql = (
+            "SELECT localId,TalkerId,MsgSvrID,Type,SubType,CreateTime,IsSender,Sequence,StatusEx,FlagEx,Status,"
+            "MsgSequence,StrContent,MsgServerSeq,StrTalker,DisplayContent,Reserved0,Reserved1,Reserved3,"
+            "Reserved4,Reserved5,Reserved6,CompressContent,BytesExtra,BytesTrans,Reserved2,"
+            "ROW_NUMBER() OVER (ORDER BY CreateTime ASC) AS id "
+            "FROM MSG WHERE 1=1 "
+            f"AND MsgSvrID = {msg_id}"
+            f"ORDER BY CreateTime ASC LIMIT 1"
+        )
+        dbresult = self.bot.QueryDatabase(db_handle=self.bot.GetDBHandle("MSG.db"), sql=sql)["data"]
+        print("DEBUGPRINT[58]: ComWechat.py:1140 (after dbresult = self.bot.QueryDatabase(db_han…)")
         ...
 
     def get_name_by_wxid(self, wxid):
