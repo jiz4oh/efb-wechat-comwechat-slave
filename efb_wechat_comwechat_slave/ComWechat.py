@@ -602,7 +602,16 @@ class ComWeChatChannel(SlaveChannel):
 
     def retry_download_target(self, target: Message = None):
         path = self.GetMsgCdn(target.uid)
-        msgtype = target.vendor_specific.get("wechat_msgtype", None)
+        if target.type == MsgType.Image:
+            msgtype = "image"
+        elif target.type == MsgType.File:
+            msgtype = "share"
+        elif target.type == MsgType.Voice:
+            msgtype = "voice"
+        elif target.type == MsgType.Video:
+            msgtype = "video"
+        else:
+            msgtype = target.vendor_specific.get("wechat_msgtype", None)
         efb_msgs = self._build_media_msg(msgtype, path)
         if not efb_msgs:
             return
