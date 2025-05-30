@@ -610,7 +610,7 @@ class ComWeChatChannel(SlaveChannel):
 
         author = target.author
         chat = target.chat
-        self.send_efb_msgs(efb_msgs, uid=msgid, author=author, chat=chat, edit=True, edit_media=True)
+        self.send_efb_msgs(efb_msgs, uid=target.uid, author=author, chat=chat, edit=True, edit_media=True)
 
     def _build_media_msg(self, msgtype, path):
         if not path:
