@@ -483,13 +483,13 @@ class ComWeChatChannel(SlaveChannel):
                 msg["timestamp"] = int(time.time())
                 msg["filepath"] = msg["filepath"].replace("\\","/")
                 msg["filepath"] = f'''{self.dir}{msg["filepath"]}'''
-                self.file_msg[msg["filepath"]] = ( msg , author , chat )
+                self._send_file_msg(msg , author , chat )
                 return
             if msg["type"] == "video":
                 msg["timestamp"] = int(time.time())
                 msg["filepath"] = msg["thumb_path"].replace("\\","/").replace(".jpg", ".mp4")
                 msg["filepath"] = f'''{self.dir}{msg["filepath"]}'''
-                self.file_msg[msg["filepath"]] = ( msg , author , chat )
+                self._send_file_msg(msg , author , chat )
                 return
         except Exception as e:
             self.logger.warning(f"Failed to process file msg: {e}")
@@ -499,7 +499,7 @@ class ComWeChatChannel(SlaveChannel):
             file_path = re.search("clientmsgid=\"(.*?)\"", msg["message"]).group(1) + ".amr"
             msg["timestamp"] = int(time.time())
             msg["filepath"] = f'''{self.dir}{msg["self"]}/{file_path}'''
-            self.file_msg[msg["filepath"]] = ( msg , author , chat )
+            self._send_file_msg(msg , author , chat )
             return
 
         self.send_efb_msgs(MsgProcess(msg, chat), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
@@ -552,11 +552,13 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         m = MsgProcess(msg, chat)
+                        m.edit = True
+                        m.edit_media = True
                         if commands: 
                             m.commands = MessageCommands(commands)
                         m.vendor_specific["wechat_msgtype"] = msg_type
                         del self.file_msg[path]
-                        self.send_efb_msgs(m, author=author, chat=chat, uid=msg['msgid'])
+                        self.send_efb_msgs(m, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
             if len(self.delete_file):
                 for k in list(self.delete_file.keys()):
@@ -568,6 +570,15 @@ class ComWeChatChannel(SlaveChannel):
                         except:
                             pass
                         del self.delete_file[file_path]
+
+    def _send_file_msg(self, msg: Message, author: ChatMember, chat: Chat):
+        self.file_msg[msg["filepath"]] = ( msg , author , chat )
+        text = f"{msg['type']} is downloading, please wait..."
+        efb_msg = Message(
+            type=MsgType.Text,
+            text=text
+        )
+        self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
         path = self.GetMsgCdn(msgid)
@@ -939,7 +950,7 @@ class ComWeChatChannel(SlaveChannel):
                 while True:
                     if os.path.exists(path):
                         break
-                    elif count > self.time_out:
+                    elif count > 12:  # telegram 超过 15s 会报错
                         self.logger.warning(f"Timeout when retrying download {msgid} at {path}.")
                         return
                     count += 1
