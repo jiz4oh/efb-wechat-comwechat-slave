@@ -627,13 +627,13 @@ class ComWeChatChannel(SlaveChannel):
         file = load_local_file_to_temp(path)
         filename = os.path.basename(path)
         if msgtype == "image":
-            return efb_image_wrapper(file)
+            return efb_image_wrapper(file, filename=filename)
         elif msgtype == "share":
-            return efb_file_wrapper(file, filename or file.name)
+            return efb_file_wrapper(file, filename=filename)
         elif msgtype == "voice":
             return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
         elif msgtype == "video":
-            return efb_video_wrapper(file)
+            return efb_video_wrapper(file, filename=filename)
         else:
             self.logger.warn(f"[unsupported type: {msgtype}]")
             return
