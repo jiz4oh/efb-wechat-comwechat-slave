@@ -789,6 +789,7 @@ class ComWeChatChannel(SlaveChannel):
                             name = wxid
                     message += '\n' + wxid + ' : ' + name
                 self.system_msg({'sender':chat_uid, 'message':message})
+                return msg
             elif msg.text.startswith('/getstaticinfo'):
                 info = msg.text[15::]
                 if info == 'friends':
@@ -802,6 +803,7 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     message = '当前仅支持查询friends, groups, group_members, contacts'
                 self.system_msg({'sender':chat_uid, 'message':message})
+                return msg
             elif msg.text.startswith('/helpcomwechat'):
                 message = '''/search - 按关键字匹配好友昵称搜索联系人
 
@@ -819,6 +821,7 @@ class ComWeChatChannel(SlaveChannel):
 
 /getstaticinfo - 可获取friends, groups, contacts信息'''
                 self.system_msg({'sender':chat_uid, 'message':message})
+                return msg
             elif msg.text.startswith('/search'):
                 keyword = msg.text[8::]
                 message = 'result:'
@@ -826,6 +829,7 @@ class ComWeChatChannel(SlaveChannel):
                     if keyword in value:
                         message += '\n' + str(key) + " : " + str(value)
                 self.system_msg({'sender':chat_uid, 'message':message})
+                return msg
             elif msg.text.startswith('/addtogroup'):
                 users = msg.text[12::]
                 res = self.bot.AddChatroomMember(chatroom_id = chat_uid, wxids = users)
