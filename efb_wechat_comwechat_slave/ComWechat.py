@@ -883,7 +883,7 @@ class ComWeChatChannel(SlaveChannel):
     def GetGroupListBySql(self):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
-            self.group_members[group] = self.group_members[group] or {}
+            self.group_members[group] = self.group_members.get(group, {})
             for wxid, name in members.items():
                 self.group_members[group][wxid] = name
     #定时更新 End
