@@ -985,7 +985,7 @@ class ComWeChatChannel(SlaveChannel):
                 msg_ids.append(self.send_text(chat_uid, msg))
         elif msg.type in [MsgType.Link]:
             msg_ids.append(self.send_text(chat_uid, msg))
-        elif msg.type in [MsgType.Image, MsgType.Sticker]:
+        elif msg.type in [MsgType.Image]:
             msg_ids.append(self.send_image(chat_uid, msg))
             if msg.text:
                 msg_ids.append(self.send_text(chat_uid, msg))
@@ -993,7 +993,7 @@ class ComWeChatChannel(SlaveChannel):
             msg_ids.append(self.send_file(chat_uid, msg))
             if msg.text:
                 msg_ids.append(self.send_text(chat_uid, msg))
-        elif msg.type in [MsgType.Animation]:
+        elif msg.type in [MsgType.Animation, MsgType.Sticker]:
             msg_ids.append(self.send_emotion(chat_uid, msg))
             if msg.text:
                 msg_ids.append(self.send_text(chat_uid, msg))
