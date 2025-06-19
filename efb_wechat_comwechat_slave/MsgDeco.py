@@ -477,44 +477,46 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 vendor_specific={ "is_refer": True }
             )
             prefix = ""
-            if "@chatroom" in refer_fromusr:
-                chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                    uid = refer_fromusr,
-                ))
-            else:
-                chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                    uid = refer_chatusr,
-                ))
-            sent_by_master = True
-            if refer_svrid is not None:
+            master_message = False
+            from_me = (refer_chatusr or refer_fromusr) == message["self"]
+            if refer_svrid is not None and from_me:
                 try:
+                    if "@chatroom" in refer_fromusr:  # 群聊中回复的消息
+                        c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+                            uid = message["sender"],
+                        ))
+                    else:
+                        c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                            uid = message["sender"],
+                        ))
                     # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
-                    master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=refer_svrid)
-                    if master_message is not None:
-                        sent_by_master = False
-                except:
-                    pass
+                    master_message = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
+                except NotImplementedError as e:
+                    print_exc()
             if refer_displayname is not None:
                 prefix = f"{refer_displayname}:"
-            if refer_svrid is None or (refer_chatusr == message["self"] and sent_by_master):
-                if refer_msgType == 1: # 被引用的消息是文本
-                    refer_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息内容
-                    result_text = qutoed_text(refer_content, msg, prefix)
-                elif refer_msgType == 49: # 被引用的消息也是引用消息
-                    try:
-                        refer_msg_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息引用的消息
-                        refer_msg_xml = etree.fromstring(refer_msg_content)
-                        type = int(refer_msg_xml.xpath('/msg/appmsg/type/text()')[0])
-                        if type == 57:
-                            refer_msg_text = refer_msg_xml.xpath('/msg/appmsg/title/text()')[0]
-                            result_text = qutoed_text(refer_msg_text, msg, prefix)
-                        else:
-                            result_text = msg
-                    except Exception as e:
-                        print_exc()
-                else: # 被引用的消息非文本，提示不支持
-                    result_text = qutoed_text(" 系统消息: 被引用的消息不是文本,暂不支持展示", msg, prefix)
-                efb_msg.text = result_text
+            if refer_svrid is None or (from_me and not master_message):
+                #TODO 因为微信会将视频/文件等拆分成多条消息，refer_svrid 对应的可能是 slave_message_id 的一部分
+                #可以考虑直接将 refer_svrid 作为 target.uid，不过在回复富文本消息的时候 target.uid 是无效状态
+                try:
+                    if refer_msgType == 1: # 被引用的消息是文本
+                        refer_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息内容
+                        result_text = qutoed_text(refer_content, msg, prefix)
+                    elif refer_msgType == 49: # 被引用的消息也是引用消息
+                            refer_msg_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息引用的消息
+                            refer_msg_xml = etree.fromstring(refer_msg_content)
+                            type = int(refer_msg_xml.xpath('/msg/appmsg/type/text()')[0])
+                            if type == 57:
+                                refer_msg_text = refer_msg_xml.xpath('/msg/appmsg/title/text()')[0]
+                                result_text = qutoed_text(refer_msg_text, msg, prefix)
+                            else:
+                                result_text = msg
+                    else: # 被引用的消息非文本，提示不支持
+                        result_text = qutoed_text(" 系统消息: 被引用的消息不是文本,暂不支持展示", msg, prefix)
+                except Exception as e:
+                    print_exc()
+                finally:
+                    efb_msg.text = result_text
             else:
                 efb_msg.target = Message(
                     uid=MessageID(refer_svrid),
