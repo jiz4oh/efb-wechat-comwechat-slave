@@ -879,7 +879,10 @@ class ComWeChatChannel(SlaveChannel):
                         name = self.contacts[wxid]
                     except:
                         try:
-                            name = self.bot.GetChatroomMemberNickname(chatroom_id = chat_uid, wxid = wxid)['nickname'] or wxid
+                            nickname = self.bot.GetChatroomMemberNickname(chatroom_id = chat_uid, wxid = wxid)['nickname']
+                            name = nickname or wxid
+                            self.group_members[chat_uid] = self.group_members[chat_uid] or {}
+                            self.group_members[chat_uid][wxid] = nickname
                         except:
                             name = wxid
                     message += '\n' + wxid + ' : ' + name
@@ -1210,7 +1213,11 @@ class ComWeChatChannel(SlaveChannel):
                 self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
 
     def GetGroupListBySql(self):
-        self.group_members = self.bot.GetAllGroupMembersBySql()
+        groups = self.bot.GetAllGroupMembersBySql()
+        for group, members in groups.items():
+            self.group_members[group] = self.group_members.get(group, {})
+            for wxid, name in members.items():
+                self.group_members[group][wxid] = name
     #定时更新 End
 
 
