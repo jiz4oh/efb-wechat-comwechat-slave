@@ -811,7 +811,7 @@ class ComWeChatChannel(SlaveChannel):
         count = 1
         while True:
             time.sleep(1)
-            if count % 1800 == 1:
+            if count % 1800 == 0:
                 self.GetGroupListBySql()
                 self.GetContactListBySql()
                 count = 1
