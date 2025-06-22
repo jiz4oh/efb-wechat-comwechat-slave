@@ -878,6 +878,16 @@ class ComWeChatChannel(SlaveChannel):
                     res = self.bot.SendCard(receiver = chat_uid, share_wxid = user, nickname = nickname)
                 else:
                     msg_ids.append(self.send_text(chat_uid, msg))
+            elif msg.text.startswith('/addfriend'):
+                user_invite = msg.text[11::].split(' ', 1)
+                if len(user_invite) == 2:
+                    user, invite = user_invite
+                else:
+                    user, invite = user_invite[0], ''
+                if user != '':
+                    res = self.bot.AddContactByWxid(wxid = user, msg = invite)
+                else:
+                    msg_ids.append(self.send_text(chat_uid, msg))
             else:
                 # Standard text message or quote reply
                 msg_ids.append(self.send_text(chat_uid, msg))
