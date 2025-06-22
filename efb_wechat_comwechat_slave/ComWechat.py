@@ -907,7 +907,7 @@ class ComWeChatChannel(SlaveChannel):
                 msg_ids.append(self.send_text(chat_uid, msg))
 
         ids = [item for item in msg_ids if item is not None]
-        if not (str(res.get("msg", "1")) == "0" or ids):
+        if not ids and str(res.get("msg", "1")) == "0":
             self.logger.warning(f"Failed to get msgid confirmation for message type {msg.type} to {chat_uid} with {msg.uid}")
             if "@openim" in chat_uid:  # 上游 bug，永远不返回企业微信的 msgid
                 return msg
