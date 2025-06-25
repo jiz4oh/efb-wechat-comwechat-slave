@@ -11,6 +11,7 @@ from lxml import etree
 
 from ehforwarderbot import utils as efb_utils
 from ehforwarderbot.message import Message
+from ehforwarderbot.message import MessageCommand, MessageCommands
 
 def MsgProcess(msg : dict , chat) -> Union[Message, List[Message]]:
 
@@ -26,7 +27,21 @@ def MsgProcess(msg : dict , chat) -> Union[Message, List[Message]]:
             ...
         if at_list:
             return efb_text_simple_wrapper(msg['message'] , at_list)
-        return efb_text_simple_wrapper(msg['message'])
+
+        efb_msg = efb_text_simple_wrapper(msg['message'])
+        template = extract_jielong_template(msg['message'])
+        if template:
+            efb_msg.commands = MessageCommands([
+                MessageCommand(
+                    name=("+1"),
+                    callable_name="plus_one",
+                    kwargs={
+                        "template": template,
+                        "sender": msg["sender"]
+                    }
+                )
+            ])
+        return efb_msg
 
     elif msg["type"] == "sysmsg":
         if "<revokemsg>" in msg["message"]:  # 重复的撤回通知，不在此处处理

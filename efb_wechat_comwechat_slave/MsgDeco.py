@@ -8,6 +8,7 @@ import re , json
 from ehforwarderbot import MsgType, Chat, coordinator
 from ehforwarderbot.chat import ChatMember
 from ehforwarderbot.message import Substitutions, Message, LinkAttribute, LocationAttribute
+from ehforwarderbot.message import MessageCommand, MessageCommands
 from ehforwarderbot.types import MessageID
 
 from .ChatMgr import ChatMgr

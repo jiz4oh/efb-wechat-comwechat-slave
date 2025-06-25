@@ -5,10 +5,16 @@ import requests as requests
 import re
 import json
 import yaml
-from typing import Dict , Any
+from typing import Dict , Any, Union
 import pilk
 import pydub
 import os
+
+def extract_jielong_template(text: str) -> Union[str, None]:
+    res = re.search(r'(#接龙.*)\n\n(1\. (?:(?!\n\n).)*)(\n\n)?(.*)', text, re.DOTALL)
+    if res:
+        number = re.findall(r'^(\d+)\.', res.group(2), re.MULTILINE)[-1]
+        return f"{res.group(1)}\n\n{res.group(2)}\n{int(number) + 1}. {'{placeholder}'}{res.group(3) or ''}{res.group(4) or ''}" 
 
 #从本地读取配置
 def load_config(path : str) -> Dict[str, None]:
