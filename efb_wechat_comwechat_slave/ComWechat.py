@@ -35,6 +35,7 @@ from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice
 from .MsgProcess import MsgProcess
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .Utils import load_local_file_to_temp, convert_silk_to_mp3
+from .Utils import extract_jielong_template
 
 from rich.console import Console
 from rich import print as rprint
@@ -194,6 +195,7 @@ class ComWeChatChannel(SlaveChannel):
         self.qrcode_timeout = self.config.get("qrcode_timeout", 10)
         self.login()
         self.wxid = self.bot.GetSelfInfo()["data"]["wxId"]
+        self.name = self.bot.GetSelfInfo()["data"]["wxNickName"]
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
@@ -902,6 +904,13 @@ class ComWeChatChannel(SlaveChannel):
                     message = '当前仅支持查询friends, groups, group_members, contacts'
                 self.system_msg({'sender':chat_uid, 'message':message})
                 return msg
+            elif msg.text.startswith('/+1'):
+                if isinstance(msg.target, Message):
+                    template = extract_jielong_template(msg.target.text)
+                    if template:
+                        message = msg.text[4::]
+                        self.plus_one(template, chat_uid, message)
+                        return msg
             elif msg.text.startswith('/helpcomwechat'):
                 message = '''/search - 按关键字匹配好友昵称搜索联系人
 
@@ -1231,3 +1240,21 @@ class ComWeChatChannel(SlaveChannel):
     #定时更新 End
 
 
+    def plus_one(self, template, sender, placeholder = ""):
+        alias = self.group_members.get(sender,{}).get(self.wxid, None)
+
+        text = template.format(placeholder=f"{alias or self.name} {placeholder}")
+        efb_msg = Message(
+            type=MsgType.Text,
+            text=text
+        )
+        msgid = self.send_text(sender, efb_msg)
+        chatname = self.get_name_by_wxid(sender)
+
+        chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+            uid = sender,
+            name = chatname,
+        ))
+
+        self.send_efb_msgs(efb_msg, uid=msgid or int(time.time()), chat=chat, author=chat.self)
+        return ""
