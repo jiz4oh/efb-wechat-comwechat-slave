@@ -1,21 +1,21 @@
 QUOTE_GROUP_MESSAGE="""<msg>
     <fromusername>%s</fromusername>
     <scene>0</scene>
-    <commenturl/>
+    <commenturl></commenturl>
     <appmsg appid="" sdkver="0">
         <title>%s</title>
-        <des/>
+        <des></des>
         <action>view</action>
         <type>57</type>
         <showtype>0</showtype>
-        <content/>
-        <url/>
-        <dataurl/>
-        <lowurl/>
-        <lowdataurl/>
-        <recorditem/>
-        <thumburl/>
-        <messageaction/>
+        <content></content>
+        <url></url>
+        <dataurl></dataurl>
+        <lowurl></lowurl>
+        <lowdataurl></lowdataurl>
+        <recorditem></recorditem>
+        <thumburl></thumburl>
+        <messageaction></messageaction>
         <refermsg>
             <type>1</type>
             <svrid>%s</svrid>
@@ -24,21 +24,21 @@ QUOTE_GROUP_MESSAGE="""<msg>
             <displayname>%s</displayname>
             <content>%s</content>
         </refermsg>
-        <extinfo/>
-        <sourceusername/>
-        <sourcedisplayname/>
-        <commenturl/>
+        <extinfo></extinfo>
+        <sourceusername></sourceusername>
+        <sourcedisplayname></sourcedisplayname>
+        <commenturl></commenturl>
         <appattach>
             <totallen>0</totallen>
-            <attachid/>
-            <emoticonmd5/>
-            <fileext/>
-            <aeskey/>
+            <attachid></attachid>
+            <emoticonmd5></emoticonmd5>
+            <fileext></fileext>
+            <aeskey></aeskey>
         </appattach>
         <weappinfo>
-            <pagepath/>
-            <username/>
-            <appid/>
+            <pagepath></pagepath>
+            <username></username>
+            <appid></appid>
             <appservicetype>0</appservicetype>
         </weappinfo>
         <websearch />
@@ -52,21 +52,21 @@ QUOTE_GROUP_MESSAGE="""<msg>
 QUOTE_MESSAGE="""<msg>
     <fromusername>%s</fromusername>
     <scene>0</scene>
-    <commenturl/>
+    <commenturl></commenturl>
     <appmsg appid="" sdkver="0">
         <title>%s</title>
-        <des/>
+        <des></des>
         <action>view</action>
         <type>57</type>
         <showtype>0</showtype>
-        <content/>
-        <url/>
-        <dataurl/>
-        <lowurl/>
-        <lowdataurl/>
-        <recorditem/>
-        <thumburl/>
-        <messageaction/>
+        <content></content>
+        <url></url>
+        <dataurl></dataurl>
+        <lowurl></lowurl>
+        <lowdataurl></lowdataurl>
+        <recorditem></recorditem>
+        <thumburl></thumburl>
+        <messageaction></messageaction>
         <refermsg>
             <type>1</type>
             <svrid>%s</svrid>
@@ -75,21 +75,21 @@ QUOTE_MESSAGE="""<msg>
             <displayname>%s</displayname>
             <content>%s</content>
         </refermsg>
-        <extinfo/>
-        <sourceusername/>
-        <sourcedisplayname/>
-        <commenturl/>
+        <extinfo></extinfo>
+        <sourceusername></sourceusername>
+        <sourcedisplayname></sourcedisplayname>
+        <commenturl></commenturl>
         <appattach>
             <totallen>0</totallen>
-            <attachid/>
-            <emoticonmd5/>
-            <fileext/>
-            <aeskey/>
+            <attachid></attachid>
+            <emoticonmd5></emoticonmd5>
+            <fileext></fileext>
+            <aeskey></aeskey>
         </appattach>
         <weappinfo>
-            <pagepath/>
-            <username/>
-            <appid/>
+            <pagepath></pagepath>
+            <username></username>
+            <appid></appid>
             <appservicetype>0</appservicetype>
         </weappinfo>
         <websearch />

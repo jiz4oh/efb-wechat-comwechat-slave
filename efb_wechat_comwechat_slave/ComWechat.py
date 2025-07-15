@@ -989,7 +989,7 @@ class ComWeChatChannel(SlaveChannel):
             displayname = msg.target.author.name
             content = escape(msg.target.vendor_specific.get("wx_xml", ""))
             if "@chatroom" in msg.author.chat.uid:
-                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid, displayname, content)
+                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
             else:
                 xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
             key = (wxid, xml)
