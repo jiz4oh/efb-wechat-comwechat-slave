@@ -38,6 +38,7 @@ from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .Utils import load_local_file_to_temp, convert_silk_to_mp3
 from .Utils import extract_jielong_template
+from .Constant import QUOTE_MESSAGE, QUOTE_GROUP_MESSAGE
 
 from rich.console import Console
 from rich import print as rprint
@@ -45,109 +46,6 @@ from io import BytesIO
 from PIL import Image
 from pyqrcode import QRCode
 from typing import Callable
-
-QUOTE_GROUP_MESSAGE="""<msg>
-    <fromusername>%s</fromusername>
-    <scene>0</scene>
-    <commenturl></commenturl>
-    <appmsg appid="" sdkver="0">
-        <title>%s</title>
-        <des></des>
-        <action>view</action>
-        <type>57</type>
-        <showtype>0</showtype>
-        <content></content>
-        <url></url>
-        <dataurl></dataurl>
-        <lowurl></lowurl>
-        <lowdataurl></lowdataurl>
-        <recorditem></recorditem>
-        <thumburl></thumburl>
-        <messageaction></messageaction>
-        <refermsg>
-            <type>1</type>
-            <svrid>%s</svrid>
-            <fromusr>%s</fromusr>
-            <chatusr>%s</chatusr>
-            <displayname>%s</displayname>
-            <content>%s</content>
-        </refermsg>
-        <extinfo></extinfo>
-        <sourceusername></sourceusername>
-        <sourcedisplayname></sourcedisplayname>
-        <commenturl></commenturl>
-        <appattach>
-            <totallen>0</totallen>
-            <attachid></attachid>
-            <emoticonmd5></emoticonmd5>
-            <fileext></fileext>
-            <aeskey></aeskey>
-        </appattach>
-        <weappinfo>
-            <pagepath></pagepath>
-            <username></username>
-            <appid></appid>
-            <appservicetype>0</appservicetype>
-        </weappinfo>
-        <websearch />
-    </appmsg>
-    <appinfo>
-        <version>1</version>
-        <appname>Window wechat</appname>
-    </appinfo>
-</msg>
-"""
-QUOTE_MESSAGE="""<msg>
-    <fromusername>%s</fromusername>
-    <scene>0</scene>
-    <commenturl></commenturl>
-    <appmsg appid="" sdkver="0">
-        <title>%s</title>
-        <des></des>
-        <action>view</action>
-        <type>57</type>
-        <showtype>0</showtype>
-        <content></content>
-        <url></url>
-        <dataurl></dataurl>
-        <lowurl></lowurl>
-        <lowdataurl></lowdataurl>
-        <recorditem></recorditem>
-        <thumburl></thumburl>
-        <messageaction></messageaction>
-        <refermsg>
-            <type>1</type>
-            <svrid>%s</svrid>
-            <fromusr>%s</fromusr>
-            <chatusr>%s<chatusr>
-            <displayname>%s</displayname>
-            <content>%s</content>
-        </refermsg>
-        <extinfo></extinfo>
-        <sourceusername></sourceusername>
-        <sourcedisplayname></sourcedisplayname>
-        <commenturl></commenturl>
-        <appattach>
-            <totallen>0</totallen>
-            <attachid></attachid>
-            <emoticonmd5></emoticonmd5>
-            <fileext></fileext>
-            <aeskey></aeskey>
-        </appattach>
-        <weappinfo>
-            <pagepath></pagepath>
-            <username></username>
-            <appid></appid>
-            <appservicetype>0</appservicetype>
-        </weappinfo>
-        <websearch />
-    </appmsg>
-    <appinfo>
-        <version>1</version>
-        <appname>Window wechat</appname>
-    </appinfo>
-</msg>
-"""
 
 class ComWeChatChannel(SlaveChannel):
     channel_name : str = "ComWechatChannel"
@@ -1088,7 +986,7 @@ class ComWeChatChannel(SlaveChannel):
             ids = load_message_ids(msgid)
             # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
             msgid = ids[0]
-            displayname = msg.target.author.display_name
+            displayname = msg.target.author.name
             content = escape(msg.target.vendor_specific.get("wx_xml", ""))
             if "@chatroom" in msg.author.chat.uid:
                 xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid, displayname, content)
