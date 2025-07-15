@@ -8,6 +8,7 @@ from pyzbar.pyzbar import decode as pyzbar_decode
 import os
 import base64
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import re
 import json
@@ -32,7 +33,7 @@ from ehforwarderbot.status import MessageRemoval
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice_wrapper, efb_video_wrapper, efb_text_simple_wrapper
-from .MsgProcess import MsgProcess
+from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .Utils import load_local_file_to_temp, convert_silk_to_mp3
 from .Utils import extract_jielong_template
@@ -67,6 +68,8 @@ QUOTE_GROUP_MESSAGE="""<msg>
             <svrid>%s</svrid>
             <fromusr>%s</fromusr>
             <chatusr>%s</chatusr>
+            <displayname>%s</displayname>
+            <content>%s</content>
         </refermsg>
         <extinfo></extinfo>
         <sourceusername></sourceusername>
@@ -116,6 +119,8 @@ QUOTE_MESSAGE="""<msg>
             <svrid>%s</svrid>
             <fromusr>%s</fromusr>
             <chatusr />
+            <displayname>%s</displayname>
+            <content>%s</content>
         </refermsg>
         <extinfo></extinfo>
         <sourceusername></sourceusername>
@@ -194,8 +199,9 @@ class ComWeChatChannel(SlaveChannel):
 
         self.qrcode_timeout = self.config.get("qrcode_timeout", 10)
         self.login()
-        self.wxid = self.bot.GetSelfInfo()["data"]["wxId"]
-        self.name = self.bot.GetSelfInfo()["data"]["wxNickName"]
+        self.me = self.bot.GetSelfInfo()["data"]
+        self.name = self.me["wxNickName"]
+        self.wxid = self.me["wxId"]
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
@@ -650,7 +656,7 @@ class ComWeChatChannel(SlaveChannel):
             self._send_file_msg(msg , author , chat )
             return
 
-        self.send_efb_msgs(MsgProcess(msg, chat), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        self.send_efb_msgs(MsgWrapper(msg["message"], MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def handle_file_msg(self):
         while True:
@@ -699,7 +705,7 @@ class ComWeChatChannel(SlaveChannel):
                             flag = True
 
                     if flag:
-                        m = MsgProcess(msg, chat)
+                        m = MsgWrapper(msg["message"], MsgProcess(msg, chat))[0]
                         m.edit = True
                         m.edit_media = True
                         if commands: 
@@ -1080,10 +1086,12 @@ class ComWeChatChannel(SlaveChannel):
             ids = load_message_ids(msgid)
             # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
             msgid = ids[0]
+            displayname = self.me["wxNickName"]
+            content = escape(vendor_specific.get("wx_xml", ""))
             if "@chatroom" in msg.author.chat.uid:
-                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid)
+                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid, displayname, content)
             else:
-                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender)
+                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, displayname, content)
             key = (wxid, xml)
             with self.pending_lock:
                 self.sent_msgs[key] = threading.Event()
