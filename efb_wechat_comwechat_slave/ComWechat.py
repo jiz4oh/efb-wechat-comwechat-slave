@@ -7,6 +7,7 @@ import qrcode
 from pyzbar.pyzbar import decode as pyzbar_decode
 import os
 import base64
+import pickle
 from pathlib import Path
 
 import re
@@ -88,6 +89,7 @@ class ComWeChatChannel(SlaveChannel):
         self.login()
         self.wxid = self.bot.GetSelfInfo()["data"]["wxId"]
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
+        self.load()
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
@@ -880,12 +882,32 @@ class ComWeChatChannel(SlaveChannel):
                 )
                 self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
 
+    def dump(self):
+        data = {
+            "group_memebers": self.group_members
+        }
+        file = self.base_path + "\\" + self.wxid + "\\comwechat.efb.pkl"
+        with open(file,"wb") as f:
+            pickle.dump(data, f)
+
+    def load(self):
+        file = self.base_path + "\\" + self.wxid + "\\comwechat.efb.pkl"
+        if os.path.exists(file):
+            with open(file, 'rb') as fp:
+                data = pickle.load(fp)
+                self.group_members = data.get("group_memebers", {})
+
     def GetGroupListBySql(self):
+        is_updated = False
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
             self.group_members[group] = self.group_members.get(group, {})
             for wxid, name in members.items():
-                self.group_members[group][wxid] = name
+                if self.group_members[group].get(wxid, None) != name:
+                    self.group_members[group][wxid] = name
+                    is_updated = True
+        if is_updated:
+            self.dump()
     #定时更新 End
 
 
