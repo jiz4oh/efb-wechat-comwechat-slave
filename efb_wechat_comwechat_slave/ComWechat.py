@@ -118,7 +118,7 @@ QUOTE_MESSAGE="""<msg>
             <type>1</type>
             <svrid>%s</svrid>
             <fromusr>%s</fromusr>
-            <chatusr />
+            <chatusr>%s<chatusr>
             <displayname>%s</displayname>
             <content>%s</content>
         </refermsg>
@@ -1091,7 +1091,7 @@ class ComWeChatChannel(SlaveChannel):
             if "@chatroom" in msg.author.chat.uid:
                 xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, msg.author.chat.uid, displayname, content)
             else:
-                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, displayname, content)
+                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
             key = (wxid, xml)
             with self.pending_lock:
                 self.sent_msgs[key] = threading.Event()
