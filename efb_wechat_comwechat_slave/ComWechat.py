@@ -883,9 +883,9 @@ class ComWeChatChannel(SlaveChannel):
             else:
                 content = "<content />"
             if "@chatroom" in msg.author.chat.uid:
-                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text, msgid, sender, sender, displayname, content)
+                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
             else:
-                xml = QUOTE_MESSAGE % (self.wxid, text, msgid, sender, sender, displayname, content)
+                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
             key = (wxid, xml)
             with self.pending_lock:
                 self.sent_msgs[key] = threading.Event()
