@@ -987,7 +987,11 @@ class ComWeChatChannel(SlaveChannel):
             # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
             msgid = ids[0]
             displayname = msg.target.author.name
-            content = escape(msg.target.vendor_specific.get("wx_xml", ""))
+            content = escape(msg.target.vendor_specific.get("wx_xml", ""), {
+                "\n": "&#x0A;",
+                "\t": "&#x09;",
+                '"': "&quot;",
+            }) or msg.target.text
             comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
             if comwechat_info.get("type", None) == "animatedsticker":
                 refer_type = 47
