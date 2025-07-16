@@ -38,7 +38,7 @@ from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .Utils import load_local_file_to_temp, convert_silk_to_mp3
 from .Utils import extract_jielong_template
-from .Constant import QUOTE_MESSAGE, QUOTE_GROUP_MESSAGE
+from .Constant import QUOTE_MESSAGE
 
 from rich.console import Console
 from rich import print as rprint
@@ -556,7 +556,7 @@ class ComWeChatChannel(SlaveChannel):
             self._send_file_msg(msg , author , chat )
             return
 
-        self.send_efb_msgs(MsgWrapper(msg["message"], MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def handle_file_msg(self):
         while True:
@@ -605,7 +605,7 @@ class ComWeChatChannel(SlaveChannel):
                             flag = True
 
                     if flag:
-                        m = MsgWrapper(msg["message"], MsgProcess(msg, chat))[0]
+                        m = MsgWrapper(msg, MsgProcess(msg, chat))[0]
                         m.edit = True
                         m.edit_media = True
                         if commands: 
@@ -988,14 +988,30 @@ class ComWeChatChannel(SlaveChannel):
             msgid = ids[0]
             displayname = msg.target.author.name
             content = escape(msg.target.vendor_specific.get("wx_xml", ""))
+            comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
+            if comwechat_info.get("type", None) == "animatedsticker":
+                refer_type = 47
+            elif msg.target.type == MsgType.Image:
+                refer_type = 3
+            elif msg.target.type == MsgType.Voice:
+                refer_type = 34
+            elif msg.target.type == MsgType.Video:
+                refer_type = 43
+            elif msg.target.type == MsgType.Sticker:
+                refer_type = 47
+            elif msg.target.type == MsgType.Location:
+                refer_type = 48
+            elif msg.target.type == MsgType.File:
+                refer_type = 49
+            elif comwechat_info.get("type", None) == "share":
+                refer_type = 49
+            else:
+                refer_type = 1
             if content:
                 content = "<content>%s</content>" % content
             else:
                 content = "<content />"
-            if "@chatroom" in msg.author.chat.uid:
-                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
-            else:
-                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
+            xml = QUOTE_MESSAGE % (self.wxid, text_to_send, refer_type, msgid, sender, sender, displayname, content)
             key = (wxid, xml)
             with self.pending_lock:
                 self.sent_msgs[key] = threading.Event()
