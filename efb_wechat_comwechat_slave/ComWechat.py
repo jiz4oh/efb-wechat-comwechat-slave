@@ -626,12 +626,12 @@ class ComWeChatChannel(SlaveChannel):
                         del self.delete_file[file_path]
 
     def _send_file_msg(self, msg: Message, author: ChatMember, chat: Chat):
-        text = f"{msg['type']} is downloading, please wait..."
-        efb_msg = Message(
-            type=MsgType.Text,
-            text=text
-        )
-        self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        # text = f"{msg['type']} is downloading, please wait..."
+        # efb_msg = Message(
+        #     type=MsgType.Text,
+        #     text=text
+        # )
+        # self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
     def retry_download(self, msgid, msgtype, chattype, chatuid):
