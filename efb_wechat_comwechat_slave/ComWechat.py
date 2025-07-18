@@ -192,6 +192,7 @@ class ComWeChatChannel(SlaveChannel):
             author = chat.other
             self.handle_msg(msg, author, chat)
 
+        self.group_member_lock = threading.Lock()
         @self.bot.on("group_msg")
         def on_group_msg(msg : Dict):
             self.logger.debug(f"group_msg:{msg}")
@@ -213,7 +214,7 @@ class ComWeChatChannel(SlaveChannel):
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
                 name = name,
-                alias = self.group_members.get(sender,{}).get(wxid , None),
+                alias = self.get_group_members(sender).get(wxid , None),
             ))
             self.handle_msg(msg, author, chat)
 
@@ -1181,6 +1182,17 @@ class ComWeChatChannel(SlaveChannel):
             with open(file, 'rb') as fp:
                 data = pickle.load(fp)
                 self.group_members = data.get("group_memebers", {})
+
+    def get_group_members(self, sender):
+        members = self.group_members.get(sender, None)
+        if members is None:
+           if self.group_member_lock.acquire(False):
+                members = self.bot.GetGroupMembersBySql(sender)
+                self.group_members[sender] = members
+                self.group_member_lock.release()
+           else:
+                return {}
+        return members
 
     def GetGroupListBySql(self):
         is_updated = False
