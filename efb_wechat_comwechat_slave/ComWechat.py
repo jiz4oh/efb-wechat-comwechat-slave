@@ -75,6 +75,16 @@ class ComWeChatChannel(SlaveChannel):
     contact_update_lock = threading.Lock()
     group_update_lock = threading.Lock()
 
+    @staticmethod
+    def update_contacts_wrapper(func):
+        def wrapper(self, *args, **kwargs):
+            if not self.friends and not self.groups:
+                self.get_me()
+                self.GetContactListBySql()
+                self.GetGroupListBySql()
+            return func(self, *args, **kwargs)
+        return wrapper
+
     def __init__(self, instance_id: InstanceID = None):
         super().__init__(instance_id=instance_id)
         self.logger.info("ComWeChat Slave Channel initialized.")
