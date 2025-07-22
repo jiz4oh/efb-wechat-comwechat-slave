@@ -93,7 +93,6 @@ class ComWeChatChannel(SlaveChannel):
         self.qr_file = None
         self.wxid = None
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
-        self.load()
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
@@ -434,6 +433,7 @@ class ComWeChatChannel(SlaveChannel):
         )
         if self.is_login():
             self.get_me()
+            self.load()
             self.GetContactListBySql()
             self.GetGroupListBySql()
             msg.text = "登录成功"
@@ -740,6 +740,7 @@ class ComWeChatChannel(SlaveChannel):
         if self.wxid is None:
             if self.is_login():
                 self.get_me()
+                self.load()
                 self.GetContactListBySql()
                 self.GetGroupListBySql()
             else:
