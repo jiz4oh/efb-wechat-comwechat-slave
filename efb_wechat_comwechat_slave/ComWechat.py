@@ -112,7 +112,17 @@ class ComWeChatChannel(SlaveChannel):
             name = self.channel_name,
         ))
 
+        def update_contacts_wrapper(func):
+            def wrapper(self, *args, **kwargs):
+                if not self.friends and not self.groups:
+                    self.get_me()
+                    self.GetContactListBySql()
+                    self.GetGroupListBySql()
+                return func(self, *args, **kwargs)
+            return wrapper
+
         @self.bot.on("sent_msg")
+        @update_contacts_wrapper
         def on_sent_msg(msg: Dict):
             """Callback for messages sent by the bot (potentially from other devices or API)."""
             self.logger.debug(f"on_sent_msg received: {msg}")
@@ -1162,16 +1172,6 @@ class ComWeChatChannel(SlaveChannel):
                 return path
         except Exception as e:
             self.logger.warning(f"Error occurred when retrying download {msgid}. {e}")
-
-    @staticmethod
-    def update_contacts_wrapper(func):
-        def wrapper(self, *args, **kwargs):
-            if not self.friends and not self.groups:
-                self.get_me()
-                self.GetContactListBySql()
-                self.GetGroupListBySql()
-            return func(self, *args, **kwargs)
-        return wrapper
 
     @staticmethod
     def non_blocking_lock_wrapper(lock: threading.Lock) :
