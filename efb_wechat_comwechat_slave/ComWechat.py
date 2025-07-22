@@ -113,12 +113,12 @@ class ComWeChatChannel(SlaveChannel):
         ))
 
         def update_contacts_wrapper(func):
-            def wrapper(self, *args, **kwargs):
+            def wrapper(*args, **kwargs):
                 if not self.friends and not self.groups:
                     self.get_me()
                     self.GetContactListBySql()
                     self.GetGroupListBySql()
-                return func(self, *args, **kwargs)
+                return func(*args, **kwargs)
             return wrapper
 
         @self.bot.on("sent_msg")
