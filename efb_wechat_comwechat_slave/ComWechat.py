@@ -92,6 +92,7 @@ class ComWeChatChannel(SlaveChannel):
         ))
 
         @self.bot.on("self_msg")
+        @update_contacts_wrapper
         def on_self_msg(msg : Dict):
             self.logger.debug(f"self_msg:{msg}")
             sender = msg["sender"]
@@ -116,6 +117,7 @@ class ComWeChatChannel(SlaveChannel):
             self.handle_msg(msg , author , chat)
 
         @self.bot.on("friend_msg")
+        @update_contacts_wrapper
         def on_friend_msg(msg : Dict):
             self.logger.debug(f"friend_msg:{msg}")
 
@@ -137,6 +139,7 @@ class ComWeChatChannel(SlaveChannel):
             self.handle_msg(msg, author, chat)
 
         @self.bot.on("group_msg")
+        @update_contacts_wrapper
         def on_group_msg(msg : Dict):
             self.logger.debug(f"group_msg:{msg}")
             sender = msg["sender"]
@@ -162,6 +165,7 @@ class ComWeChatChannel(SlaveChannel):
             self.handle_msg(msg, author, chat)
 
         @self.bot.on("revoke_msg")
+        @update_contacts_wrapper
         def on_revoked_msg(msg : Dict):
             self.logger.debug(f"revoke_msg:{msg}")
             sender = msg["sender"]
@@ -189,6 +193,7 @@ class ComWeChatChannel(SlaveChannel):
             )
 
         @self.bot.on("transfer_msg")
+        @update_contacts_wrapper
         def on_transfer_msg(msg : Dict):
             self.logger.debug(f"transfer_msg:{msg}")
             sender = msg["sender"]
@@ -229,6 +234,7 @@ class ComWeChatChannel(SlaveChannel):
             self.system_msg(content)
 
         @self.bot.on("frdver_msg")
+        @update_contacts_wrapper
         def on_frdver_msg(msg : Dict):
             self.logger.debug(f"frdver_msg:{msg}")
             content = {}
@@ -259,6 +265,7 @@ class ComWeChatChannel(SlaveChannel):
             self.system_msg(content)
 
         @self.bot.on("card_msg")
+        @update_contacts_wrapper
         def on_card_msg(msg : Dict):
             self.logger.debug(f"card_msg:{msg}")
             sender = msg["sender"]
@@ -863,6 +870,16 @@ class ComWeChatChannel(SlaveChannel):
             else:
                 name = wxid
         return name
+
+    @staticmethod
+    def update_contacts_wrapper(func):
+        def wrapper(self, *args, **kwargs):
+            if not self.friends and not self.groups:
+                self.get_me()
+                self.GetContactListBySql()
+                self.GetGroupListBySql()
+            return func(self, *args, **kwargs)
+        return wrapper
 
     @staticmethod
     def non_blocking_lock_wrapper(lock: threading.Lock) :
