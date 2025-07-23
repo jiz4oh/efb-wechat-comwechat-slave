@@ -362,7 +362,7 @@ class ComWeChatChannel(SlaveChannel):
         msg = Message(
             type=MsgType.Text,
         )
-        msg.uid=int(time.time())
+        msg.uid=MessageID(str(int(time.time())))
 
         if not file:
             is_login = self.is_login()
@@ -390,11 +390,13 @@ class ComWeChatChannel(SlaveChannel):
             author = chat.get_member(SystemChatMember.SYSTEM_ID)
         except KeyError:
             author = chat.add_system_member()
+        efb_msg = Message(chat = chat , uid = previous_message_id)
+        coordinator.send_status(
+            MessageRemoval(source_channel=self, destination_channel=coordinator.master, message=efb_msg)
+        )
         msg = Message(
             type=MsgType.Text,
-            uid=previous_message_id,
-            edit=True,
-            edit_media = True
+            uid=MessageID(str(int(time.time()))),
         )
         if self.is_login():
             self.get_me()
