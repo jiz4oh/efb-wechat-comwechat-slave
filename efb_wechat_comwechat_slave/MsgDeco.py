@@ -541,13 +541,13 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 text=result_text,
                 vendor_specific={ "is_mp": True }
             )
-        elif type == 87: # 群公告
-            title = xml.xpath('/msg/appmsg/textannouncement/text()')[0]
-            efb_msg = Message(
-                type=MsgType.Text,
-                text= f"[群公告]:\n{title}" ,
-                vendor_specific={ "is_mp": False }
-            )
+        # elif type == 87: # 群公告
+        #     title = xml.xpath('/msg/appmsg/textannouncement/text()')[0]
+        #     efb_msg = Message(
+        #         type=MsgType.Text,
+        #         text= f"[群公告]:\n{title}" ,
+        #         vendor_specific={ "is_mp": False }
+        #     )
         elif type == 2000:
             subtype = xml.xpath("/msg/appmsg/wcpayinfo/paysubtype/text()")[0]
             money =  xml.xpath("/msg/appmsg/wcpayinfo/feedesc/text()")[0].strip("<![CDATA[").strip("]]>")
@@ -676,7 +676,7 @@ def efb_voice_wrapper(file: IO, filename: str = None, text: str = None) -> Messa
         efb_msg.text = text
     return efb_msg
 
-def efb_other_wrapper(text: str) -> Union[Message, None]:
+def efb_other_wrapper(text: str, chat) -> Union[Message, None]:
     """
     A simple EFB message wrapper for other message
     :param text: The content of the message
@@ -759,8 +759,15 @@ def efb_other_wrapper(text: str) -> Union[Message, None]:
             )
 
     elif msg_type == "mmchatroombarannouncememt":
-        text = xml.xpath('/sysmsg/mmchatroombarannouncememt/content/text()')[0]
-        efb_msg = efb_text_simple_wrapper(text)
+        title = xml.xpath('/sysmsg/mmchatroombarannouncememt/content/text()')[0]
+        at_list = {}
+        at_list[(0, 6)] = chat.self
+        efb_msg = Message(
+            type=MsgType.Text,
+            text= f"[群公告]:\n{title}" ,
+            vendor_specific={ "is_mp": False },
+            substitutions = Substitutions(at_list)
+        )
 
     if efb_msg:
         return efb_msg
