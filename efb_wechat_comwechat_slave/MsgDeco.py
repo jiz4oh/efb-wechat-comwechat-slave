@@ -761,7 +761,7 @@ def efb_other_wrapper(text: str, chat) -> Union[Message, None]:
     elif msg_type == "mmchatroombarannouncememt":
         title = xml.xpath('/sysmsg/mmchatroombarannouncememt/content/text()')[0]
         at_list = {}
-        at_list[(0, 6)] = chat.self
+        at_list[(1, 4)] = chat.self
         efb_msg = Message(
             type=MsgType.Text,
             text= f"[群公告]:\n{title}" ,
