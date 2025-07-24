@@ -1246,14 +1246,14 @@ class ComWeChatChannel(SlaveChannel):
                     is_updated = True
         for group in self.groups:
             for wxid, alias in self.group_members.get(group.uid, {}).items():
+                name = self.get_name_by_wxid(wxid)
                 try:
                     m = group.get_member(wxid)
+                    if name != wxid:
+                        m.name = name
                 except KeyError:
-                    m = group.add_member(uid=wxid)
+                    m = group.add_member(uid=wxid, name=name)
                 m.alias = alias
-                name = self.get_name_by_wxid(wxid)
-                if name != wxid:
-                    m.name = name
         if is_updated:
             self.dump()
     #定时更新 End
