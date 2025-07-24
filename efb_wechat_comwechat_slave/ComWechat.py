@@ -235,8 +235,10 @@ class ComWeChatChannel(SlaveChannel):
                     try:
                         alias = re.search("@([^@]*)\u2005", msg["message"]).group(1)
                         if alias != name:
-                            self.group_members[sender] = self.group_members.get(sender, {})
-                            self.group_members[sender][user_list[0]] = alias
+
+                            self.merge_group_members(sender, {
+                                user_list[0]: alias
+                            })
                     except:
                         print_exc()
 
@@ -1248,6 +1250,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def merge_group_members(self, group, new_members):
         is_updated = False
+        self.group_members[group] = self.group_members.get(group, {})
         for wxid, alias in new_members.items():
             if self.group_members[group].get(wxid, None) != alias:
                 self.group_members[group][wxid] = alias
@@ -1259,7 +1262,6 @@ class ComWeChatChannel(SlaveChannel):
     def GetGroupListBySql(self):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
-            self.group_members[group] = self.group_members.get(group, {})
             self.merge_group_members(group, members)
         for group in self.groups:
             for wxid, alias in self.group_members.get(group.uid, {}).items():
