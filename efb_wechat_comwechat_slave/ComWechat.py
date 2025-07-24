@@ -912,21 +912,26 @@ class ComWeChatChannel(SlaveChannel):
         if members is None:
            if self.group_member_lock.acquire(False):
                 members = self.bot.GetGroupMembersBySql(sender)
-                self.group_members[sender] = members
+                self.merge_group_members(sender, members)
                 self.group_member_lock.release()
            else:
                 return {}
         return members
 
-    def GetGroupListBySql(self):
+    def merge_group_members(self, group, new_members):
         is_updated = False
+        for wxid, alias in members.items():
+            if self.group_members[group].get(wxid, None) != alias:
+                self.group_members[group][wxid] = alias
+                is_updated = True
+        if is_updated:
+            self.dump()
+
+    def GetGroupListBySql(self):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
             self.group_members[group] = self.group_members.get(group, {})
-            for wxid, alias in members.items():
-                if self.group_members[group].get(wxid, None) != alias:
-                    self.group_members[group][wxid] = alias
-                    is_updated = True
+            self.merge_group_members(group, members)
         for group in self.groups:
             for wxid, alias in self.group_members.get(group.uid, {}).items():
                 name = self.get_name_by_wxid(wxid)
@@ -939,8 +944,6 @@ class ComWeChatChannel(SlaveChannel):
                 if alias != m.name:
                     m.alias = alias
                     continue
-        if is_updated:
-            self.dump()
     #定时更新 End
 
 
