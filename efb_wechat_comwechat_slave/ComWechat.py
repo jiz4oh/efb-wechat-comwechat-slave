@@ -244,11 +244,11 @@ class ComWeChatChannel(SlaveChannel):
 
             if "<refermsg>" in msg["message"]:
                 xml = etree.fromstring(msg["message"])
-                wxid = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
+                id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
                 alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
                 if alias and alias != name:
                     self.merge_group_members(sender, {
-                        wxid: alias
+                        id: alias
                     })
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
