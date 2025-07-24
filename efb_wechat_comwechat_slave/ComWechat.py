@@ -859,8 +859,6 @@ class ComWeChatChannel(SlaveChannel):
 
     #定时更新 Start
     def GetContactListBySql(self):
-        self.groups = []
-        self.friends = []
         contacts = self.bot.GetContactListBySql()
         for contact in contacts:
             data = contacts[contact]
@@ -914,10 +912,20 @@ class ComWeChatChannel(SlaveChannel):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
             self.group_members[group] = self.group_members.get(group, {})
-            for wxid, name in members.items():
-                if self.group_members[group].get(wxid, None) != name:
-                    self.group_members[group][wxid] = name
+            for wxid, alias in members.items():
+                if self.group_members[group].get(wxid, None) != alias:
+                    self.group_members[group][wxid] = alias
                     is_updated = True
+        for group in self.groups:
+            for wxid, alias in self.group_members.get(group.uid, {}).items():
+                name = self.get_name_by_wxid(wxid)
+                try:
+                    m = group.get_member(wxid)
+                    if name != wxid:
+                        m.name = name
+                except KeyError:
+                    m = group.add_member(uid=wxid, name=name)
+                m.alias = alias
         if is_updated:
             self.dump()
     #定时更新 End
