@@ -273,6 +273,13 @@ class ComWeChatChannel(SlaveChannel):
                     uid = sender,
                     name = name,
                 ))
+                xml = etree.fromstring(msg["message"])
+                text = xml.xpath('string(/sysmsg/revokemsg/replacemsg)')
+                alias = re.search(r'^"(.*?)" (撤回了一条消息|recalled a message)$', text)
+                if alias and alias.group(1) != self.get_name_by_wxid(wxid):
+                    self.merge_group_members(sender, {
+                        wxid: alias.group(1)
+                    })
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
