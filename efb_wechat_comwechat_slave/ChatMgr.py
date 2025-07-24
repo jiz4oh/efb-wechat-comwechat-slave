@@ -65,7 +65,7 @@ class ChatMgr:
         if member.get('name', None) is not None:
             m.name = member.get('name')
         if member.get('alias', None) is not None:
-            m.name = member.get('alias')
+            m.alias = member.get('alias')
         return m
 
     @staticmethod
