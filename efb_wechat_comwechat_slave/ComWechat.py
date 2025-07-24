@@ -1248,7 +1248,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def merge_group_members(self, group, new_members):
         is_updated = False
-        for wxid, alias in members.items():
+        for wxid, alias in new_members.items():
             if self.group_members[group].get(wxid, None) != alias:
                 self.group_members[group][wxid] = alias
                 is_updated = True
