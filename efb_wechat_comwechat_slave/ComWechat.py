@@ -1264,7 +1264,9 @@ class ComWeChatChannel(SlaveChannel):
                         m.name = name
                 except KeyError:
                     m = group.add_member(uid=wxid, name=name)
-                m.alias = alias
+                if alias != m.name:
+                    m.alias = alias
+                    continue
         if is_updated:
             self.dump()
     #定时更新 End
