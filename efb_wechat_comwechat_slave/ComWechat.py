@@ -159,6 +159,14 @@ class ComWeChatChannel(SlaveChannel):
             except:
                 name = wxid
 
+            if "<atuserlist>" in msg["extrainfo"]:
+                at_user = re.search("<atuserlist>(.*)<\/atuserlist>", msg["extrainfo"]).group(1)
+                user_list = [user for user in at_user.split(",") if user]
+                if len(user_list) == 1:
+                    alias = msg["message"].split("\u2005", 1)[0][1:-1]
+                    self.group_members[sender] = self.group_members.get(sender, {})
+                    self.group_members[sender][wxid] = alias
+
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
                 name = name,
