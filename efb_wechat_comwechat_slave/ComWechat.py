@@ -417,7 +417,7 @@ class ComWeChatChannel(SlaveChannel):
     def login_prompt(self):
         file = self.get_qrcode()
         chat = self.user_auth_chat
-        author = self.user_auth_chat.other,
+        author = self.user_auth_chat.other
         msg = Message(
             type=MsgType.Text,
             uid=MessageID(str(int(time.time()))),
@@ -444,7 +444,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def confirm_login(self):
         chat = self.user_auth_chat
-        author = self.user_auth_chat.other,
+        author = self.user_auth_chat.other
         msg = Message(
             type=MsgType.Text,
             uid=MessageID(str(int(time.time()))),
