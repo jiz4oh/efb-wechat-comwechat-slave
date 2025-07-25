@@ -172,7 +172,8 @@ class ComWeChatChannel(SlaveChannel):
                     })
 
             if not extracted and "<atuserlist>" in msg["extrainfo"]:
-                at_user = re.search("<atuserlist>(.*)<\/atuserlist>", msg["extrainfo"]).group(1)
+                xml = etree.fromstring(msg["extrainfo"])
+                at_user = xml.xpath('string(/msgsource/atuserlist)')
                 user_list = [user for user in at_user.split(",") if user]
                 if len(user_list) == 1:
                     try:
