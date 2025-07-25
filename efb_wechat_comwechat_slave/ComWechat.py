@@ -176,7 +176,7 @@ class ComWeChatChannel(SlaveChannel):
                 user_list = [user for user in at_user.split(",") if user]
                 if len(user_list) == 1:
                     try:
-                        alias = re.search("@([^@]*)\u2005", msg["message"]).group(1)
+                        alias = re.search("^@(.*)\u2005", msg["message"]).group(1)
                         if alias != name:
                             self.merge_group_members(sender, {
                                 user_list[0]: alias
