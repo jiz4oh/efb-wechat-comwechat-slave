@@ -176,7 +176,7 @@ class ComWeChatChannel(SlaveChannel):
                     name = name,
                 ))
                 author = chat.self
-                self.extract_alias(msg, name)
+                self.extract_alias(msg)
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
@@ -229,7 +229,7 @@ class ComWeChatChannel(SlaveChannel):
                 name = self.contacts[wxid]
             except:
                 name = wxid
-            self.extract_alias(msg, name)
+            self.extract_alias(msg)
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
@@ -1271,13 +1271,14 @@ class ComWeChatChannel(SlaveChannel):
                 if alias != m.name:
                     m.alias = alias
                     continue
-    def extract_alias(self, msg, name):
+    def extract_alias(self, msg):
         sender = msg["sender"]
         extracted = False
         if "<refermsg>" in msg["message"]:
             xml = etree.fromstring(msg["message"])
             id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
             alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
+            name = self.get_name_by_wxid(id)
             if alias and alias != name:
                 extracted = True
                 self.merge_group_members(sender, {
@@ -1290,6 +1291,7 @@ class ComWeChatChannel(SlaveChannel):
             user_list = [user for user in at_user.split(",") if user]
             if len(user_list) == 1:
                 try:
+                    name = self.get_name_by_wxid(user_list[0])
                     alias = re.search("^@(.*)\u2005", msg["message"]).group(1)
                     if alias != name:
                         self.merge_group_members(sender, {
