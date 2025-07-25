@@ -229,27 +229,29 @@ class ComWeChatChannel(SlaveChannel):
             except:
                 name = wxid
 
-            if "<atuserlist>" in msg["extrainfo"]:
+            extracted = False
+            if "<refermsg>" in msg["message"]:
+                xml = etree.fromstring(msg["message"])
+                id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
+                alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
+                if alias and alias != name:
+                    extracted = True
+                    self.merge_group_members(sender, {
+                        id: alias
+                    })
+
+            if not extracted and "<atuserlist>" in msg["extrainfo"]:
                 at_user = re.search("<atuserlist>(.*)<\/atuserlist>", msg["extrainfo"]).group(1)
                 user_list = [user for user in at_user.split(",") if user]
                 if len(user_list) == 1:
                     try:
-                        alias = re.search("@([^@]*)\u2005", msg["message"]).group(1)
+                        alias = re.search("^@(.*)\u2005", msg["message"]).group(1)
                         if alias != name:
                             self.merge_group_members(sender, {
                                 user_list[0]: alias
                             })
                     except:
                         print_exc()
-
-            if "<refermsg>" in msg["message"]:
-                xml = etree.fromstring(msg["message"])
-                id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
-                alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
-                if alias and alias != name:
-                    self.merge_group_members(sender, {
-                        id: alias
-                    })
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
