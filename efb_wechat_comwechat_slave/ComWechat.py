@@ -176,7 +176,7 @@ class ComWeChatChannel(SlaveChannel):
                     name = name,
                 ))
                 author = chat.self
-                self.extract_alias(msg)
+                self.extract_alias(msg, name)
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
@@ -229,7 +229,7 @@ class ComWeChatChannel(SlaveChannel):
                 name = self.contacts[wxid]
             except:
                 name = wxid
-            self.extract_alias(msg)
+            self.extract_alias(msg, name)
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
@@ -1271,8 +1271,8 @@ class ComWeChatChannel(SlaveChannel):
                 if alias != m.name:
                     m.alias = alias
                     continue
-
-    def extract_alias(self, msg):
+    def extract_alias(self, msg, name):
+        sender = msg["sender"]
         extracted = False
         if "<refermsg>" in msg["message"]:
             xml = etree.fromstring(msg["message"])
