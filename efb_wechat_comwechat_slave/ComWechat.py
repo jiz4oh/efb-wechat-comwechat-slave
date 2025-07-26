@@ -1223,12 +1223,12 @@ class ComWeChatChannel(SlaveChannel):
         data = {
             "group_memebers": self.group_members
         }
-        file = f"{efb_utils.get_config_path(self.channel_id)}/comwechat.efb.pkl"
+        file = f"{efb_utils.get_data_path(self.channel_id)}/comwechat.efb.pkl"
         with open(file,"wb") as f:
             pickle.dump(data, f)
 
     def load(self):
-        file = f"{efb_utils.get_config_path(self.channel_id)}/comwechat.efb.pkl"
+        file = f"{efb_utils.get_data_path(self.channel_id)}/comwechat.efb.pkl"
         if os.path.exists(file):
             with open(file, 'rb') as fp:
                 data = pickle.load(fp)
