@@ -117,6 +117,7 @@ class ComWeChatChannel(SlaveChannel):
             def wrapper(*args, **kwargs):
                 if not self.friends and not self.groups:
                     self.get_me()
+                    self.load()
                     self.GetContactListBySql()
                     self.GetGroupListBySql()
                 return func(*args, **kwargs)
