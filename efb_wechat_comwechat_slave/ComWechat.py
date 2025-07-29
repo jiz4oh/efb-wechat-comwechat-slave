@@ -235,7 +235,7 @@ class ComWeChatChannel(SlaveChannel):
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
                 name = name,
-                alias = self.get_group_members(sender).get(wxid , None),
+                alias = self.group_members.get(sender, {}).get(wxid , None),
             ))
             self.handle_msg(msg, author, chat)
 
@@ -1219,6 +1219,7 @@ class ComWeChatChannel(SlaveChannel):
                 )
                 self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
 
+    @non_blocking_lock_wrapper(group_update_lock)
     def dump(self):
         data = {
             "group_memebers": self.group_members
@@ -1233,17 +1234,6 @@ class ComWeChatChannel(SlaveChannel):
             with open(file, 'rb') as fp:
                 data = pickle.load(fp)
                 self.group_members = data.get("group_memebers", {})
-
-    def get_group_members(self, sender):
-        members = self.group_members.get(sender, None)
-        if members is None:
-           if self.group_member_lock.acquire(False):
-                members = self.bot.GetGroupMembersBySql(sender)
-                self.merge_group_members(sender, members)
-                self.group_member_lock.release()
-           else:
-                return {}
-        return members
 
     def merge_group_members(self, group, new_members):
         is_updated = False
@@ -1260,18 +1250,7 @@ class ComWeChatChannel(SlaveChannel):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
             self.merge_group_members(group, members)
-        for group in self.groups:
-            for wxid, alias in self.group_members.get(group.uid, {}).items():
-                name = self.get_name_by_wxid(wxid)
-                try:
-                    m = group.get_member(wxid)
-                    if name != wxid:
-                        m.name = name
-                except KeyError:
-                    m = group.add_member(uid=wxid, name=name)
-                if alias != m.name:
-                    m.alias = alias
-                    continue
+
     def extract_alias(self, msg):
         sender = msg["sender"]
         extracted = False
