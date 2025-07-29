@@ -1224,7 +1224,7 @@ class ComWeChatChannel(SlaveChannel):
         rows = self.db.get_all_group_aliases()
         for r in rows:
             self.group_members[r.group_uid] = self.group_members.get(r.group_uid, {})
-            self.group_members[r.group_uid][r.wxid] = r.alias
+            self.group_members[r.group_uid][r.wxid] = r.group_alias
 
     def merge_group_members(self, group, new_members):
         self.group_members[group] = self.group_members.get(group, {})
