@@ -481,16 +481,8 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
             from_me = (refer_chatusr or refer_fromusr) == message["self"]
             if refer_svrid is not None and from_me:
                 try:
-                    if "@chatroom" in refer_fromusr:  # 群聊中回复的消息
-                        c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                            uid = message["sender"],
-                        ))
-                    else:
-                        c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                            uid = message["sender"],
-                        ))
                     # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
-                    master_message = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
+                    master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=refer_svrid)
                 except NotImplementedError as e:
                     print_exc()
             if refer_displayname is not None:
