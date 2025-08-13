@@ -25,7 +25,7 @@ from . import __version__ as version
 from ehforwarderbot.channel import SlaveChannel
 from ehforwarderbot.types import MessageID, ChatID, InstanceID
 from ehforwarderbot import utils as efb_utils
-from ehforwarderbot.exceptions import EFBException, EFBChatNotFound
+from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError
 from ehforwarderbot.message import MessageCommand, MessageCommands
 from ehforwarderbot.status import MessageRemoval
 
@@ -963,7 +963,7 @@ class ComWeChatChannel(SlaveChannel):
             self.logger.warning(f"Failed to get msgid confirmation for message type {msg.type} to {chat_uid} with {msg.uid}")
             if "@openim" in chat_uid:  # 上游 bug，永远不返回企业微信的 msgid
                 return msg
-            raise EFBMessageNotFound("发送失败，请在手机端确认")
+            raise EFBMessageError("发送失败，请在手机端确认")
         elif ids:
             # 保存所有消息 id 以在撤回消息时使用
             msg.uid = dump_message_ids(ids)
