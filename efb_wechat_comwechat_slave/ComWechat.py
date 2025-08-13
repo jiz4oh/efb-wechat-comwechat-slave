@@ -963,11 +963,7 @@ class ComWeChatChannel(SlaveChannel):
             self.logger.warning(f"Failed to get msgid confirmation for message type {msg.type} to {chat_uid} with {msg.uid}")
             if "@openim" in chat_uid:  # 上游 bug，永远不返回企业微信的 msgid
                 return msg
-            target = Message(
-                uid=MessageID(msg.uid),
-                chat=msg.chat,
-            )
-            self.system_msg({'sender': chat_uid, 'message':f"发送消息失败，请在手机端确认", 'target': target})
+            raise EFBMessageNotFound("发送失败，请在手机端确认")
         elif ids:
             # 保存所有消息 id 以在撤回消息时使用
             msg.uid = dump_message_ids(ids)
