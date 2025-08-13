@@ -780,7 +780,7 @@ class ComWeChatChannel(SlaveChannel):
 
         try:
             if str(res["msg"]) == "0":
-                self.system_msg({'sender':chat_uid, 'message':"发送失败，请在手机端确认"})
+                raise EFBMessageNotFound("发送失败，请在手机端确认")
         except:
             ...
         return msg
