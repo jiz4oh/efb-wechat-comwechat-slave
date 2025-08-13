@@ -521,11 +521,6 @@ class ComWeChatChannel(SlaveChannel):
                     elif (int(time.time()) - msg["timestamp"]) > self.time_out:
                         msg['message'] = f"[{msg_type} 下载超时,请在手机端查看]"
                         msg["type"] = "text"
-                        chattype = "Unknown"
-                        if isinstance(chat, GroupChat):
-                            chattype = "group"
-                        elif isinstance(chat, PrivateChat):
-                            chattype = "private"
                         commands.append(
                             MessageCommand(
                                 name=("Retry"),
@@ -533,7 +528,6 @@ class ComWeChatChannel(SlaveChannel):
                                 kwargs={
                                     "msgid": msg["msgid"],
                                     "msgtype": msg_type,
-                                    "chattype": chattype,
                                     "chatuid": chat.uid,
                                 },
                             )
@@ -580,23 +574,14 @@ class ComWeChatChannel(SlaveChannel):
         # self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
-    def retry_download(self, msgid, msgtype, chattype, chatuid):
+    def retry_download(self, msgid, msgtype, chatuid):
         path = self.GetMsgCdn(msgid)
+        chat = self.get_chat(chatuid)
         efb_msgs = self._build_media_msg(msgtype, path)
         if not efb_msgs:
             return f"[下载失败]"
         efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
-        if chattype == "group":
-            c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
-                uid = chatuid,
-            ))
-        elif chattype == "private":
-            c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
-                uid = chatuid
-            ))
-        else:
-            return f"[unsupported chat type: {chattype}]"
-        master_message = coordinator.master.get_message_by_id(chat=c, msg_id=msgid)
+        master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=msgid)
         self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
         return "下载成功"
 
