@@ -253,14 +253,27 @@ class ComWeChatChannel(SlaveChannel):
             content = {}
             sender = msg["sender"]
             fromnickname = re.search('fromnickname="(.*?)"', msg["message"]).group(1)
+            wxid = re.search('fromusername="(.*?)"', msg["message"]).group(1)
+            sign = re.search('sign="(.*?)"', msg["message"]).group(1)
             apply_content = re.search('content="(.*?)"', msg["message"]).group(1)
+            chatroom = re.search('chatroomusername="(.*?)"', msg["message"]).group(1)
+            source = "朋友验证消息"
+            if chatroom:
+                source = f"来自群聊: {self.get_name_by_wxid(chatroom)}"
+            else:
+                sharecardnickname = re.search('sharecardnickname="(.*?)"', msg["message"]).group(1)
+                if sharecardnickname:
+                    source = f"对方通过 \"{sharecardnickname}\" 分享的名片添加"
             url = re.search('bigheadimgurl="(.*?)"', msg["message"]).group(1)
             v3 = re.search('encryptusername="(v3.*?)"', msg["message"]).group(1)
             v4 = re.search('ticket="(v4.*?)"', msg["message"]).group(1)
             text = (
                 "好友申请:\n"
                 f"名字: {fromnickname}\n"
+                f"微信号: {wxid}\n"
+                f"个性签名: {sign}\n"
                 f"验证内容: {apply_content}\n"
+                f"来源: {source}\n"
                 f"头像: {url}"
             )
 
