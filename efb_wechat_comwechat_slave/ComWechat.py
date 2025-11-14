@@ -1,6 +1,7 @@
 import logging, tempfile
 import time
 import threading
+from lxml import etree
 from traceback import print_exc
 from pydub import AudioSegment
 import qrcode
@@ -26,16 +27,17 @@ from . import __version__ as version
 from ehforwarderbot.channel import SlaveChannel
 from ehforwarderbot.types import MessageID, ChatID, InstanceID
 from ehforwarderbot import utils as efb_utils
-from ehforwarderbot.exceptions import EFBException, EFBChatNotFound
+from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError
 from ehforwarderbot.message import MessageCommand, MessageCommands
-from ehforwarderbot.status import MessageRemoval
+from ehforwarderbot.status import MessageRemoval, ChatUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text
 from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
-from .Constant import QUOTE_MESSAGE, QUOTE_GROUP_MESSAGE
+from .db import DatabaseManager
+from .Constant import QUOTE_MESSAGE
 
 from rich.console import Console
 from rich import print as rprint
@@ -57,6 +59,7 @@ class ComWeChatChannel(SlaveChannel):
     groups : EFBGroupChat    = []
 
     contacts : Dict = {}            # {wxid : {alias : str , remark : str, nickname : str , type : int}} -> {wxid : name(after handle)}
+    nicknames : Dict = {}
     group_members : Dict = {}       # {"group_id" : { "wxID" : "displayName"}}
 
     time_out : int = 120
@@ -77,6 +80,7 @@ class ComWeChatChannel(SlaveChannel):
         self.logger.info("ComWeChat Slave Channel initialized.")
         self.logger.info("Version: %s" % self.__version__)
         self.config = load_config(efb_utils.get_config_path(self.channel_id))
+        self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
         # Mechanism for waiting for send confirmation
@@ -98,6 +102,7 @@ class ComWeChatChannel(SlaveChannel):
         self.me = self.bot.GetSelfInfo()["data"]
         self.wxid = self.me["wxId"]
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
+        self.load()
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
@@ -155,6 +160,7 @@ class ComWeChatChannel(SlaveChannel):
                     name = name,
                 ))
                 author = chat.self
+                self.extract_alias(msg)
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
@@ -204,11 +210,15 @@ class ComWeChatChannel(SlaveChannel):
                 name = self.contacts[wxid]
             except:
                 name = wxid
+            self.extract_alias(msg)
+            alias = self.group_members.get(sender,{}).get(wxid , None)
+            if alias == self.nicknames.get(wxid, None):
+                alias = None
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
                 name = name,
-                alias = self.group_members.get(sender,{}).get(wxid , None),
+                alias = alias
             ))
             self.handle_msg(msg, author, chat)
 
@@ -226,6 +236,13 @@ class ComWeChatChannel(SlaveChannel):
                     uid = sender,
                     name = name,
                 ))
+                xml = etree.fromstring(msg["message"])
+                text = xml.xpath('string(/sysmsg/revokemsg/replacemsg)')
+                alias = re.search(r'^"(.*?)" (撤回了一条消息|recalled a message)$', text)
+                if alias and alias.group(1) != self.get_nickname_by_wxid(wxid):
+                    self.merge_group_members(sender, {
+                        wxid: alias.group(1)
+                    })
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
@@ -349,13 +366,38 @@ class ComWeChatChannel(SlaveChannel):
                 )
             ]
 
-            content["sender"] = sender
-            content["message"] = text
-            content["name"] = name
+            if "@chatroom" in sender:
+                chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+                    uid = sender,
+                    name = self.get_name_by_wxid(sender)
+                ))
+                if sender == wxid:
+                    author = chat.self
+                else:
+                    alias = self.group_members.get(sender,{}).get(wxid , None),
+                    alias = None if alias == name else alias
+                    author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
+                        uid = wxid,
+                        name = name,
+                        alias = alias
+                    ))
+            else:
+                chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                    uid = sender,
+                    name = name,
+                ))
+                author = chat.self if sender == self.wxid else chat.other
+                if sender.startswith('gh_'):
+                    chat.vendor_specific = {'is_mp' : True}
+
             # if "v3" in username:
             #     content["commands"] = commands
             # 暂时屏蔽
-            self.system_msg(content)
+            m = Message(
+                type=MsgType.Text,
+                text=text
+            )
+            self.send_efb_msgs(MsgWrapper(msg, m), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def login(self):
         self.master_qr_picture_id = None
@@ -550,7 +592,7 @@ class ComWeChatChannel(SlaveChannel):
             self.file_msg[msg["filepath"]] = ( msg , author , chat )
             return
 
-        self.send_efb_msgs(MsgWrapper(msg["message"], MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def handle_file_msg(self):
         while True:
@@ -582,7 +624,7 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         del self.file_msg[path]
-                        self.send_efb_msgs(MsgWrapper(msg["message"], MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+                        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
             if len(self.delete_file):
                 for k in list(self.delete_file.keys()):
@@ -640,6 +682,9 @@ class ComWeChatChannel(SlaveChannel):
         if not self.friends and not self.groups:
             self.GetContactListBySql()
 
+        return self._get_chat(chat_uid)
+
+    def _get_chat(self, chat_uid: ChatID) -> 'Chat':
         if "@chatroom" in chat_uid:
             for group in self.groups:
                 if group.uid == chat_uid:
@@ -826,6 +871,11 @@ class ComWeChatChannel(SlaveChannel):
             # 保存所有消息 id 以在撤回消息时使用
             msg.uid = dump_message_ids(ids)
 
+        try:
+            if str(res["msg"]) == "0":
+                raise EFBMessageError("发送失败，请在手机端确认")
+        except:
+            ...
         return msg
 
     def _get_file_lock(self, wxid: ChatID) -> threading.Lock:
@@ -860,43 +910,6 @@ class ComWeChatChannel(SlaveChannel):
 
         self.logger.debug(f"Successfully received msgid {received_msgid} for key {key}")
         return received_msgid
-
-    def send_text(self, wxid: ChatID, msg: Message):
-        """Sends a text message and waits for confirmation."""
-        text_to_send = msg.text
-        key = None
-
-        if isinstance(msg.target, Message) and text_to_send:
-            msgid = msg.target.uid
-            if isinstance(msg.target.author, SelfChatMember):
-                displayname = self.me["wxNickName"]
-                sender = self.wxid
-            else:
-                sender = msg.target.author.uid
-                displayname = msg.target.author.name
-            ids = load_message_ids(msgid)
-            # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
-            msgid = ids[0]
-            content = escape(msg.target.vendor_specific.get("wx_xml", ""))
-            if content:
-                content = "<content>%s</content>" % content
-            else:
-                content = "<content />"
-            if "@chatroom" in msg.author.chat.uid:
-                xml = QUOTE_GROUP_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
-            else:
-                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, msgid, sender, sender, displayname, content)
-            key = (wxid, xml)
-            with self.pending_lock:
-                self.sent_msgs[key] = threading.Event()
-            self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
-        else:
-            key = (wxid, text_to_send)
-            with self.pending_lock:
-                self.sent_msgs[key] = threading.Event()
-            self.bot.SendText(wxid=wxid, msg=text_to_send)
-
-        return self._wait(key, self.send_timeout)
 
     def _save_file(self, msg: Message, rename: bool = False):
         name = os.path.basename(msg.file.name)
@@ -934,6 +947,62 @@ class ComWeChatChannel(SlaveChannel):
     def send_emotion(self, wxid: ChatID, msg: Message):
         self.bot.SendEmotion(wxid=wxid, img_path=self._save_file(msg))
 
+    def send_text(self, wxid: ChatID, msg: Message) -> 'Message':
+        text_to_send = msg.text
+        key = None
+
+        if isinstance(msg.target, Message) and text_to_send:
+            msgid = msg.target.uid
+            if isinstance(msg.target.author, SelfChatMember):
+                sender = self.wxid
+                displayname = self.me["wxNickName"]
+            else:
+                sender = msg.target.author.uid
+                displayname = msg.target.author.name
+            ids = load_message_ids(msgid)
+            # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
+            msgid = ids[0]
+            content = escape(msg.target.vendor_specific.get("wx_xml", ""), {
+                "\n": "&#x0A;",
+                "\t": "&#x09;",
+                '"': "&quot;",
+            }) or msg.target.text
+            comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
+            if comwechat_info.get("type", None) == "animatedsticker":
+                refer_type = 47
+            elif msg.target.type == MsgType.Image:
+                refer_type = 3
+            elif msg.target.type == MsgType.Voice:
+                refer_type = 34
+            elif msg.target.type == MsgType.Video:
+                refer_type = 43
+            elif msg.target.type == MsgType.Sticker:
+                refer_type = 47
+            elif msg.target.type == MsgType.Location:
+                refer_type = 48
+            elif msg.target.type == MsgType.File:
+                refer_type = 49
+            elif comwechat_info.get("type", None) == "share":
+                refer_type = 49
+            else:
+                refer_type = 1
+            if content:
+                content = "<content>%s</content>" % content
+            else:
+                content = "<content />"
+            xml = QUOTE_MESSAGE % (self.wxid, text_to_send, refer_type, msgid, sender, sender, displayname, content)
+            key = (wxid, xml)
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+            self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
+        else:
+            key = (wxid, text_to_send)
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+            self.bot.SendText(wxid=wxid, msg=text_to_send)
+
+        return self._wait(key, self.send_timeout)
+
     def get_chat_picture(self, chat: 'Chat') -> BinaryIO:
         wxid = chat.uid
         result = self.bot.GetPictureBySql(wxid = wxid)
@@ -967,7 +1036,7 @@ class ComWeChatChannel(SlaveChannel):
         ...
 
     def stop_polling(self):
-        ...
+        self.db.stop_worker()
 
     def get_message_by_id(self, chat: 'Chat', msg_id: MessageID) -> Optional['Message']:
         ...
@@ -983,20 +1052,40 @@ class ComWeChatChannel(SlaveChannel):
                 name = data[3]
                 if name == "":
                     name = wxid
+                else:
+                    self.contacts[wxid] = name
             else:
                 name = wxid
         return name
 
+    def get_nickname_by_wxid(self, wxid):
+        try:
+            nickname = self.nicknames[wxid]
+            if nickname == "":
+                nickname = wxid
+        except:
+            data = self.bot.GetContactBySql(wxid = wxid)
+            if data:
+                nickname = data[3]
+                if nickname == "":
+                    nickname = wxid
+                else:
+                    self.nicknames[wxid] = nickname
+            else:
+                nickname = wxid
+        return nickname
+
     #定时更新 Start
     def GetContactListBySql(self):
-        self.groups = []
-        self.friends = []
+        new_chats = []
+        modified_chats = []
         contacts = self.bot.GetContactListBySql()
         for contact in contacts:
             data = contacts[contact]
             name = (f"{data['remark']}({data['nickname']})") if data["remark"] else data["nickname"]
 
             self.contacts[contact] = name
+            self.nicknames[contact] = data["nickname"]
             if data["type"] == 0 or data["type"] == 4:
                 continue
 
@@ -1005,16 +1094,73 @@ class ComWeChatChannel(SlaveChannel):
                     uid=contact,
                     name=name
                 )
-                self.groups.append(ChatMgr.build_efb_chat_as_group(new_entity))
+                try:
+                    self._get_chat(contact)
+                    modified_chats.append(contact)
+                except EFBChatNotFound:
+                    self.groups.append(ChatMgr.build_efb_chat_as_group(new_entity))
+                    new_chats.append(contact)
             else:
                 new_entity = EFBPrivateChat(
                     uid=contact,
                     name=name
                 )
-                self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
+                try:
+                    self._get_chat(contact)
+                    modified_chats.append(contact)
+                except EFBChatNotFound:
+                    self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
+                    new_chats.append(contact)
+
+        if new_chats or modified_chats:
+            coordinator.send_status(ChatUpdates(channel=self, new_chats=new_chats, modified_chats=modified_chats))
+
+    def load(self):
+        rows = self.db.get_all_group_aliases()
+        for r in rows:
+            self.group_members[r.group_uid] = self.group_members.get(r.group_uid, {})
+            self.group_members[r.group_uid][r.wxid] = r.group_alias
+
+    def merge_group_members(self, group, new_members):
+        self.group_members[group] = self.group_members.get(group, {})
+        for wxid, alias in new_members.items():
+            if self.group_members[group].get(wxid, None) != alias:
+                self.group_members[group][wxid] = alias
+                self.db.update_group_alias(group, wxid, alias)
 
     def GetGroupListBySql(self):
-        self.group_members = self.bot.GetAllGroupMembersBySql()
+        groups = self.bot.GetAllGroupMembersBySql()
+        for group, members in groups.items():
+            self.merge_group_members(group, members)
+
+    def extract_alias(self, msg):
+        sender = msg["sender"]
+        extracted = False
+        if "<refermsg>" in msg["message"]:
+            xml = etree.fromstring(msg["message"])
+            id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
+            alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
+            name = self.get_nickname_by_wxid(id)
+            if alias and alias != name:
+                extracted = True
+                self.merge_group_members(sender, {
+                    id: alias
+                })
+
+        if not extracted and "<atuserlist>" in msg["extrainfo"]:
+            xml = etree.fromstring(msg["extrainfo"])
+            at_user = xml.xpath('string(/msgsource/atuserlist)')
+            user_list = [user for user in at_user.split(",") if user]
+            if len(user_list) == 1:
+                try:
+                    name = self.get_nickname_by_wxid(user_list[0])
+                    alias = re.search("^@(.*)\u2005", msg["message"]).group(1)
+                    if alias != name:
+                        self.merge_group_members(sender, {
+                            user_list[0]: alias
+                        })
+                except:
+                    print_exc()
     #定时更新 End
 
 
