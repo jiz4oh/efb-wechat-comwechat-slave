@@ -478,19 +478,18 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 vendor_specific={ "is_refer": True }
             )
             prefix = ""
-            master_message = False
+            recorded = False
             from_me = (refer_chatusr or refer_fromusr) == message["self"]
             if refer_svrid is not None and from_me:
                 try:
-                    # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
-                    master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=refer_svrid)
+                    # 从 master channel 中根据微信 id 查找
+                    recorded = coordinator.master.get_message_by_id(chat=chat, msg_id=refer_svrid)
                 except NotImplementedError as e:
                     print_exc()
             if refer_displayname is not None:
                 prefix = f"{refer_displayname}:"
-            if refer_svrid is None or (from_me and not master_message):
-                #TODO 因为微信会将视频/文件等拆分成多条消息，refer_svrid 对应的可能是 slave_message_id 的一部分
-                #可以考虑直接将 refer_svrid 作为 target.uid，不过在回复富文本消息的时候 target.uid 是无效状态
+            if refer_svrid is None or (from_me and not recorded):
+                #因为微信会将视频/文件等拆分成多条消息，refer_svrid 对应的可能是 slave_message_id 的一部分
                 try:
                     if refer_msgType == 1: # 被引用的消息是文本
                         refer_content = xml.xpath('/msg/appmsg/refermsg/content/text()')[0] # 被引用消息内容
