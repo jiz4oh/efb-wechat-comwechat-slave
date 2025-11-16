@@ -27,7 +27,7 @@ from ehforwarderbot.types import MessageID, ChatID, InstanceID
 from ehforwarderbot import utils as efb_utils
 from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError
 from ehforwarderbot.message import MessageCommand, MessageCommands
-from ehforwarderbot.status import MessageRemoval, ChatUpdates
+from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
@@ -235,6 +235,18 @@ class ComWeChatChannel(SlaveChannel):
                 alias = alias
             ))
             self.handle_msg(msg, author, chat)
+
+            if msg["type"] == "sysmsg":
+                match = re.search(r'^(.*?) invited (.*?) to the group chat$', msg["message"])
+                if match:
+                    coordinator.send_status(
+                        MemberUpdates(self, sender, new_members=[ChatID(match.group(2))])
+                    )
+                match = re.search(r'^.*? has deleted this group.$', msg["message"])
+                if match:
+                    coordinator.send_status(
+                        ChatUpdates(self, removed_chats=[sender])
+                    )
 
         @self.bot.on("revoke_msg")
         @update_contacts_wrapper
