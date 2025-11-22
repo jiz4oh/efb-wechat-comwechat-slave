@@ -1,5 +1,6 @@
 from typing import Mapping, Tuple, List, Union, IO
 import magic
+import os
 from lxml import etree
 from functools import partial
 from traceback import print_exc
@@ -12,6 +13,7 @@ from ehforwarderbot.types import MessageID
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat
+from .Utils import *
 
 QUOTE_DIVIDER = " - - - - - - - - - - - - - - - "
 
@@ -77,6 +79,25 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
 
             res.append(data)
     return res
+
+def rebuild_media_msg(msgtype, path):
+    if not path:
+        return efb_text_simple_wrapper(f"[重试 {msgtype} 失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
+    filename = os.path.basename(path)
+    if msgtype == "image":
+        file = wechatimagedecode(filename)
+        return efb_image_wrapper(file)
+    elif msgtype == "share":
+        file = load_local_file_to_temp(path)
+        return efb_file_wrapper(file, filename=filename)
+    elif msgtype == "voice":
+        file = load_local_file_to_temp(path)
+        return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
+    elif msgtype == "video":
+        file = load_local_file_to_temp(path)
+        return efb_video_wrapper(file, filename=filename)
+    else:
+        return
 
 def efb_text_simple_wrapper(text: str, ats: Union[Mapping[Tuple[int, int], Union[Chat, ChatMember]], None] = None) -> Message:
     """
