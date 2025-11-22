@@ -82,7 +82,7 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
 
 def rebuild_media_msg(msgtype, path):
     if not path:
-        return efb_text_simple_wrapper(f"[重试 {msgtype} 失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
+        return
     filename = os.path.basename(path)
     if msgtype == "image":
         file = wechatimagedecode(filename)

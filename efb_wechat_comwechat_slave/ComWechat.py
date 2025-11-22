@@ -686,16 +686,20 @@ class ComWeChatChannel(SlaveChannel):
 
     def retry_download(self, msgid, chatuid, msgtype):
         path = self.GetMsgCdn(msgid)
+        if not path:
+            return "[下载失败]"
         chat = self.get_chat(chatuid)
         efb_msgs = rebuild_media_msg(msgtype, path)
         if not efb_msgs:
-            return "[下载失败]"
+            return f"[不支持的文件类型: {msgtype}]"
         master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=msgid)
         self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
         path = self.GetMsgCdn(target.uid)
+        if not path:
+            raise EFBMessageError("[重试失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
         if not msgtype:
             if target.type == MsgType.Image:
