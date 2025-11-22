@@ -31,9 +31,8 @@ from ehforwarderbot.status import MessageRemoval, ChatUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
-from .MsgDeco import qutoed_text, efb_image_wrapper, efb_file_wrapper, efb_voice_wrapper, efb_video_wrapper, efb_text_simple_wrapper
+from .MsgDeco import qutoed_text, rebuild_media_msg
 from .MsgProcess import MsgProcess, MsgWrapper
-from .Utils load_local_file_to_temp, convert_silk_to_mp3
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION
 from .db import DatabaseManager
 from .Constant import QUOTE_MESSAGE
@@ -607,54 +606,32 @@ class ComWeChatChannel(SlaveChannel):
         # self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
-    def retry_download(self, msgid, msgtype, chatuid):
+    def retry_download(self, msgid, chatuid, msgtype):
         path = self.GetMsgCdn(msgid)
         chat = self.get_chat(chatuid)
-        efb_msgs = self._build_media_msg(msgtype, path)
+        efb_msgs = rebuild_media_msg(msgtype, path)
         if not efb_msgs:
-            return f"[下载失败]"
-        efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
+            return "[下载失败]"
         master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=msgid)
         self.send_efb_msgs(efb_msgs, uid=msgid, author=master_message.author, chat=master_message.chat, edit=True, edit_media=True)
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
         path = self.GetMsgCdn(target.uid)
-        if target.type == MsgType.Image:
-            msgtype = "image"
-        elif target.type == MsgType.File:
-            msgtype = "share"
-        elif target.type == MsgType.Voice:
-            msgtype = "voice"
-        elif target.type == MsgType.Video:
-            msgtype = "video"
-        else:
-            msgtype = target.vendor_specific.get("wechat_msgtype", None)
-        efb_msgs = self._build_media_msg(msgtype, path)
-        if not efb_msgs:
-            return
-        efb_msgs = [efb_msgs] if isinstance(efb_msgs, Message) else efb_msgs
-
+        msgtype = target.vendor_specific.get("wechat_msgtype", None)
+        if not msgtype:
+            if target.type == MsgType.Image:
+                msgtype = "image"
+            elif target.type == MsgType.File:
+                msgtype = "share"
+            elif target.type == MsgType.Voice:
+                msgtype = "voice"
+            elif target.type == MsgType.Video:
+                msgtype = "video"
+        efb_msgs = rebuild_media_msg(msgtype, path)
         author = target.author
         chat = target.chat
         self.send_efb_msgs(efb_msgs, uid=target.uid, author=author, chat=chat, edit=True, edit_media=True)
-
-    def _build_media_msg(self, msgtype, path):
-        if not path:
-            return efb_text_simple_wrapper(f"[重试 {msgtype} 失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
-        file = load_local_file_to_temp(path)
-        filename = os.path.basename(path)
-        if msgtype == "image":
-            return efb_image_wrapper(file, filename=filename)
-        elif msgtype == "share":
-            return efb_file_wrapper(file, filename=filename)
-        elif msgtype == "voice":
-            return efb_voice_wrapper(convert_silk_to_mp3(file) , file.name + ".ogg")
-        elif msgtype == "video":
-            return efb_video_wrapper(file, filename=filename)
-        else:
-            self.logger.warn(f"[unsupported type: {msgtype}]")
-            return
 
     def process_friend_request(self , v3 , v4):
         self.logger.debug(f"process_friend_request:{v3} {v4}")
