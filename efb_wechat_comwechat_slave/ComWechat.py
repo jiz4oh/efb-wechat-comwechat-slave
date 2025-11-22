@@ -888,8 +888,7 @@ class ComWeChatChannel(SlaveChannel):
                             msg.target.text = text
                         self.send_efb_msgs(msg.target, edit=True)
                     else:
-                        text = f"无法转发{msgid},不是有效的微信消息"
-                        self.system_msg({'sender': chat_uid, 'message': text, 'target': msg.target})
+                        raise EFBMessageError(f"无法转发{msgid},不是有效的微信消息")
                     return msg
             elif msg.text.startswith('/at'):
                 users_message = msg.text[4::].split(' ', 1)
@@ -909,8 +908,7 @@ class ComWeChatChannel(SlaveChannel):
                 if isinstance(msg.target, Message):
                     self.retry_download_target(target=msg.target)
                 else:
-                    message = "回复超时消息时使用"
-                    self.system_msg({'sender':chat_uid, 'message':message})
+                    raise EFBMessageError("回复超时消息时使用")
                 return msg
             elif msg.text.startswith('/sendcard'):
                 user_nickname = msg.text[10::].split(' ', 1)
