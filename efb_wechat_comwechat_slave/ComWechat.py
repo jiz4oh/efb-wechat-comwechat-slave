@@ -236,7 +236,7 @@ class ComWeChatChannel(SlaveChannel):
             ))
             self.handle_msg(msg, author, chat)
 
-            if msg["type"] == "sysmsg":
+            if msg["type"] == "sysmsg" and msg.get("message", None):
                 match = re.search(r'^(.*?) invited (.*?) to the group chat$', msg["message"])
                 if match:
                     coordinator.send_status(
