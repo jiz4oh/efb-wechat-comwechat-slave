@@ -85,7 +85,7 @@ def rebuild_media_msg(msgtype, path):
         return
     filename = os.path.basename(path)
     if msgtype == "image":
-        file = wechatimagedecode(filename)
+        file = wechatimagedecode(path)
         return efb_image_wrapper(file)
     elif msgtype == "share":
         file = load_local_file_to_temp(path)
