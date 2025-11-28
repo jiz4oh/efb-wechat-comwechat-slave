@@ -6,6 +6,7 @@ from traceback import print_exc
 from pydub import AudioSegment
 import os
 import base64
+import contextlib
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -71,7 +72,6 @@ class ComWeChatChannel(SlaveChannel):
     supported_message_types = {MsgType.Text, MsgType.Sticker, MsgType.Image , MsgType.Link , MsgType.File , MsgType.Video , MsgType.Animation, MsgType.Voice}
     self_update_lock = threading.Lock()
     contact_update_lock = threading.Lock()
-    group_update_lock = threading.Lock()
 
     def __init__(self, instance_id: InstanceID = None):
         super().__init__(instance_id=instance_id)
@@ -95,12 +95,11 @@ class ComWeChatChannel(SlaveChannel):
         ))
 
         def update_contacts_wrapper(func):
-            def wrapper(msg):
-                if self.wxid is None:
-                    if self.confirm_login():
-                        return func(msg)
-                else:
-                    return func(msg)
+            def wrapper(*args, **kwargs):
+                if not self.friends and not self.groups:
+                    self.get_me()
+                    self.GetContactListBySql()
+                return func(*args, **kwargs)
             return wrapper
 
         @self.bot.on("self_msg")
@@ -182,14 +181,11 @@ class ComWeChatChannel(SlaveChannel):
             except:
                 name = wxid
             self.extract_alias(msg)
-            alias = self.group_members.get(sender,{}).get(wxid , None)
-            if alias == self.nicknames.get(wxid, None):
-                alias = None
 
             author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                 uid = wxid,
                 name = name,
-                alias = alias
+                alias = self.get_group_alias_by(sender, wxid)
             ))
             self.handle_msg(msg, author, chat)
 
@@ -374,12 +370,10 @@ class ComWeChatChannel(SlaveChannel):
                 if sender == wxid:
                     author = chat.self
                 else:
-                    alias = self.group_members.get(sender,{}).get(wxid , None),
-                    alias = None if alias == name else alias
                     author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
                         uid = wxid,
                         name = name,
-                        alias = alias
+                        alias = self.get_group_alias_by(sender, wxid)
                     ))
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
@@ -437,7 +431,8 @@ class ComWeChatChannel(SlaveChannel):
             uid=MessageID(str(int(time.time()))),
         )
         if self.is_login():
-            self.after_login()
+            self.get_me()
+            self.GetContactListBySql()
             msg.text = "登录成功"
         else:
             msg.text = "登录失败，请重新登录"
@@ -655,7 +650,6 @@ class ComWeChatChannel(SlaveChannel):
             count += 1
             if count % 1800 == 0:
                 if self.wxid is not None:
-                    self.GetGroupListBySql()
                     self.GetContactListBySql()
             if count % 1800 == 3:
                 if getattr(coordinator, 'master', None) is not None and not self.is_login():
@@ -687,7 +681,8 @@ class ComWeChatChannel(SlaveChannel):
 
         if self.wxid is None:
             if self.is_login():
-                self.after_login()
+                self.get_me()
+                self.GetContactListBySql()
             else:
                 content = {
                     "name": self.user_auth_chat.name,
@@ -994,6 +989,12 @@ class ComWeChatChannel(SlaveChannel):
         self.me = self.bot.GetSelfInfo()["data"]
         self.wxid = self.me["wxId"]
 
+    def get_group_alias_by(self, group_wxid, member_wxid):
+        alias = self.group_members.get(group_wxid,{}).get(member_wxid , None)
+        if alias == self.nicknames.get(member_wxid, None):
+            alias = None
+        return alias
+
     def get_nickname_by_wxid(self, wxid):
         try:
             nickname = self.nicknames[wxid]
@@ -1049,6 +1050,8 @@ class ComWeChatChannel(SlaveChannel):
                     self.friends.append(ChatMgr.build_efb_chat_as_private(new_entity))
                     new_chats.append(contact)
 
+        self.GetGroupListBySql()
+
         if new_chats or modified_chats:
             coordinator.send_status(ChatUpdates(channel=self, new_chats=new_chats, modified_chats=modified_chats))
 
@@ -1065,27 +1068,35 @@ class ComWeChatChannel(SlaveChannel):
                 self.group_members[group][wxid] = alias
                 self.db.update_group_alias(group, wxid, alias)
 
-    @non_blocking_lock_wrapper(group_update_lock)
     def GetGroupListBySql(self):
         groups = self.bot.GetAllGroupMembersBySql()
         for group, members in groups.items():
+            with contextlib.suppress(EFBChatNotFound):
+                chat = self.get_chat(group)
+                for wxid, alias in members.items():
+                    with contextlib.suppress(EFBChatNotFound):
+                        contact = self.get_chat(wxid)
+                        ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
+                            uid = wxid,
+                            name = contact.name,
+                            alias = alias
+                        ))
             self.merge_group_members(group, members)
 
     def extract_alias(self, msg):
         sender = msg["sender"]
-        extracted = False
         if "<refermsg>" in msg["message"]:
             xml = etree.fromstring(msg["message"])
             id = xml.xpath('string(/msg/appmsg/refermsg/chatusr)')
             alias = xml.xpath('string(/msg/appmsg/refermsg/displayname)')
             name = self.get_nickname_by_wxid(id)
             if alias and alias != name:
-                extracted = True
                 self.merge_group_members(sender, {
                     id: alias
                 })
+                return
 
-        if not extracted and "<atuserlist>" in msg["extrainfo"]:
+        if "<atuserlist>" in msg["extrainfo"]:
             xml = etree.fromstring(msg["extrainfo"])
             at_user = xml.xpath('string(/msgsource/atuserlist)')
             user_list = [user for user in at_user.split(",") if user]
