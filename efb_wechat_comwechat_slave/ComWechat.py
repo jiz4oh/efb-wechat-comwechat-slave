@@ -97,11 +97,12 @@ class ComWeChatChannel(SlaveChannel):
         ))
 
         def update_contacts_wrapper(func):
-            def wrapper(*args, **kwargs):
-                if not self.friends and not self.groups:
-                    self.GetContactListBySql()
-                    self.GetGroupListBySql()
-                return func(*args, **kwargs)
+            def wrapper(msg):
+                if self.wxid is None:
+                    if self.confirm_login():
+                        return func(msg)
+                else:
+                    return func(msg)
             return wrapper
 
         @self.bot.on("self_msg")
@@ -139,12 +140,6 @@ class ComWeChatChannel(SlaveChannel):
 
             if msg["type"] == "eventnotify":
                 return
-
-            if self.wxid is None and sender == "weixin" and msg["wxid"] == "weixin" and msg["message"]:
-                xml = etree.fromstring(msg["message"])
-                if xml.xpath('string(/sysmsg/@type)') == "SafeModuleCfg":
-                    self.confirm_login()
-                    return
 
             name = self.get_name_by_wxid(sender)
 
