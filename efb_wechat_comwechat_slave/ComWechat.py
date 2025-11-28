@@ -99,7 +99,6 @@ class ComWeChatChannel(SlaveChannel):
         def update_contacts_wrapper(func):
             def wrapper(*args, **kwargs):
                 if not self.friends and not self.groups:
-                    self.get_me()
                     self.GetContactListBySql()
                     self.GetGroupListBySql()
                 return func(*args, **kwargs)
@@ -426,13 +425,16 @@ class ComWeChatChannel(SlaveChannel):
             uid=MessageID(str(int(time.time()))),
         )
         if self.is_login():
-            self.get_me()
-            self.GetContactListBySql()
-            self.GetGroupListBySql()
+            self.after_login()
             msg.text = "登录成功"
         else:
             msg.text = "登录失败，请重新登录"
         self.send_efb_msgs(msg, chat=chat, author=author)
+
+    def after_login(self):
+        self.get_me()
+        self.GetContactListBySql()
+        self.GetGroupListBySql()
 
     @efb_utils.extra(name="Get QR Code",
            desc="重新扫码登录")
@@ -641,9 +643,7 @@ class ComWeChatChannel(SlaveChannel):
 
         if self.wxid is None:
             if self.is_login():
-                self.get_me()
-                self.GetContactListBySql()
-                self.GetGroupListBySql()
+                self.after_login()
             else:
                 content = {
                     "name": self.user_auth_chat.name,
