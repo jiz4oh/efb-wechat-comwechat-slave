@@ -141,6 +141,12 @@ class ComWeChatChannel(SlaveChannel):
             if msg["type"] == "eventnotify":
                 return
 
+            if self.wxid is None and sender == "weixin" and msg["wxid"] == "weixin" and msg["message"]:
+                xml = etree.fromstring(msg["message"])
+                if xml.xpath('string(/sysmsg/@type)') == "SafeModuleCfg":
+                    self.confirm_login()
+                    return
+
             name = self.get_name_by_wxid(sender)
 
             chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
@@ -404,23 +410,13 @@ class ComWeChatChannel(SlaveChannel):
         )
 
         if not file:
-            is_login = self.is_login()
-            if is_login:
-                msg.text = "登录成功"
-            else:
-                msg.text = "登录失败，未知错误，请使用 /extra 重新尝试登录"
+            self.confirm_login()
         else:
-            msg.commands = MessageCommands([
-                MessageCommand(
-                    name=("Confirm"),
-                    callable_name="confirm_login",
-                ),
-            ])
             msg.type = MsgType.Image
             msg.path = Path(file.name)
             msg.file = file
             msg.mime = 'image/png'
-        self.send_efb_msgs(msg, chat=chat, author=author)
+            self.send_efb_msgs(msg, chat=chat, author=author)
 
     def confirm_login(self):
         chat = self.user_auth_chat
@@ -435,7 +431,7 @@ class ComWeChatChannel(SlaveChannel):
             self.GetGroupListBySql()
             msg.text = "登录成功"
         else:
-            msg.text = "登录失败，请使用重新登录"
+            msg.text = "登录失败，请重新登录"
         self.send_efb_msgs(msg, chat=chat, author=author)
 
     @efb_utils.extra(name="Get QR Code",
@@ -617,6 +613,7 @@ class ComWeChatChannel(SlaveChannel):
                     self.GetContactListBySql()
             if count % 1800 == 3:
                 if getattr(coordinator, 'master', None) is not None and not self.is_login():
+                    self.wxid = None
                     self.system_msg(content)
 
     #获取全部联系人
@@ -649,8 +646,8 @@ class ComWeChatChannel(SlaveChannel):
                 self.GetGroupListBySql()
             else:
                 content = {
-                    "name": self.channel_name,
-                    "sender": self.channel_name,
+                    "name": self.user_auth_chat.name,
+                    "sender": self.user_auth_chat.uid,
                     "message": "尚未登录，请发送 /extra 扫码登录"
                 }
                 self.system_msg(content)
