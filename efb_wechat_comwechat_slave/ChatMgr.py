@@ -1,5 +1,4 @@
 # coding: utf-8
-import contextlib
 import logging
 from typing import Dict, Optional, List
 
@@ -57,11 +56,12 @@ class ChatMgr:
         :param member: EFBGroupMember object, see CustomTypes.py
         :return: Newly built ChatMember
         """
-        with contextlib.suppress(KeyError):
+        try:
             m = chat.get_member(str(member.get('uid', '')))
-        m: ChatMember = chat.add_member(
-            **member
-        )
+        except KeyError:
+            m: ChatMember = chat.add_member(
+                **member
+            )
         if member.get('name', None) is not None:
             m.name = member.get('name')
         if member.get('alias', None) is not None:
