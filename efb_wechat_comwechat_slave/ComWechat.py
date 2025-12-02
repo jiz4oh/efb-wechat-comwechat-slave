@@ -598,13 +598,27 @@ class ComWeChatChannel(SlaveChannel):
                         del self.delete_file[file_path]
 
     def _send_file_msg(self, msg: Message, author: ChatMember, chat: Chat):
-        # text = f"{msg['type']} is downloading, please wait..."
-        # efb_msg = Message(
-        #     type=MsgType.Text,
-        #     text=text
-        # )
-        # self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
-        self.file_msg[msg["filepath"]] = ( msg , author , chat )
+        if not os.path.isfile(msg["filepath"]):
+            self.logger.warning(f"Wrong message {msg['msgid']} at {msg['filepath']}.")
+            text = f"download {msg['type']} failed"
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=text,
+                commands = MessageCommands([
+                    MessageCommand(
+                        name=("Retry"),
+                        callable_name="retry_download",
+                        kwargs={
+                            "msgid": msg["msgid"],
+                            "msgtype": msg["type"],
+                            "chatuid": chat.uid,
+                        },
+                    )
+                ])
+            )
+            self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        else:
+            self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
     def retry_download(self, msgid, chatuid, msgtype):
         path = self.GetMsgCdn(msgid)
