@@ -664,7 +664,7 @@ class ComWeChatChannel(SlaveChannel):
                         del self.delete_file[file_path]
 
     def _send_file_msg(self, msg: Message, author: ChatMember, chat: Chat):
-        if not os.path.isfile(msg["filepath"]):
+        if msg["filepath"] == self.dir:
             self.logger.warning(f"Wrong message {msg['msgid']} at {msg['filepath']}.")
             text = f"download {msg['type']} failed"
             efb_msg = Message(
