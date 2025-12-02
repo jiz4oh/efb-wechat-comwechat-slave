@@ -578,8 +578,6 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         m = MsgProcess(msg, chat)
-                        m.edit = True
-                        m.edit_media = True
                         if commands: 
                             m.commands = MessageCommands(commands)
                         m.vendor_specific["wechat_msgtype"] = msg_type
