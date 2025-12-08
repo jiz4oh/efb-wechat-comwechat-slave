@@ -91,10 +91,6 @@ class ComWeChatChannel(SlaveChannel):
         self._file_locks_lock = threading.Lock() # Lock for accessing _file_locks dict
         self.send_timeout = self.config.get("send_timeout", 15) # Timeout for waiting send confirmation
 
-        self.user_auth_chat = SystemChat(channel=self,
-                                    name="EWS User Auth",
-                                    uid=ChatID("__ews_user_auth__"))
-
         self.wxid = None
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
         self.load()
