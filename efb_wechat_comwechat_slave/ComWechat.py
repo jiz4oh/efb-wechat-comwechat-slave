@@ -193,6 +193,12 @@ class ComWeChatChannel(SlaveChannel):
                     uid= sender,
                     name= name,
             ))
+            try:
+                self.get_chat(sender)
+            except EFBChatNotFound:
+                self.friends.append(chat)
+                coordinator.send_status(ChatUpdates(channel=self, new_chats=[chat]))
+
             if sender.startswith('gh_'):
                 chat.vendor_specific = {'is_mp' : True}
                 self.logger.debug(f'modified_chat:{chat}')
@@ -212,6 +218,12 @@ class ComWeChatChannel(SlaveChannel):
                 uid = sender,
                 name = chatname,
             ))
+
+            try:
+                self.get_chat(sender)
+            except EFBChatNotFound:
+                self.groups.append(chat)
+                coordinator.send_status(ChatUpdates(channel=self, new_chats=[chat]))
 
             try:
                 name = self.contacts[wxid]
