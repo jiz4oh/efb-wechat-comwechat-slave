@@ -1160,7 +1160,7 @@ class ComWeChatChannel(SlaveChannel):
         try:
             res = self.bot.GetCdn(msgid=msgid)
             if res["msg"] == 1:
-                path = res["path"].replace("\\","/").replace("C:/users/user/My Documents/WeChat Files/", self.dir )
+                path = res["path"].replace(self.bot.get_base_path() + "\\", self.dir).replace("\\","/"))
                 count = 1
                 while True:
                     if os.path.exists(path):
