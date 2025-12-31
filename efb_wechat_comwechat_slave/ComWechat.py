@@ -578,6 +578,8 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         m = MsgProcess(msg, chat)
+                        m.edit = True
+                        m.edit_media = True
                         if commands: 
                             m.commands = MessageCommands(commands)
                         m.vendor_specific["wechat_msgtype"] = msg_type
@@ -616,6 +618,13 @@ class ComWeChatChannel(SlaveChannel):
             )
             self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         else:
+            msg_type = msg['type']
+            text = f"{msg_type} is downloading, please wait..."
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=text
+            )
+            self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
             self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
     def retry_download(self, msgid, chatuid, msgtype):
