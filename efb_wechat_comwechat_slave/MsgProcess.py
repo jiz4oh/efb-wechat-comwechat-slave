@@ -17,8 +17,6 @@ def MsgWrapper(msg, efb_msgs:  Union[Message, List[Message]]):
         return
     for efb_msg in efb_msgs:
         vendor_specific = getattr(efb_msg, "vendor_specific", {})
-        xml = msg.pop("message", None)
-        vendor_specific["wx_xml"] = xml
         vendor_specific["comwechat_info"] = msg
         setattr(efb_msg, "vendor_specific", vendor_specific)
     return efb_msgs

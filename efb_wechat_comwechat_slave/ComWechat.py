@@ -879,7 +879,7 @@ class ComWeChatChannel(SlaveChannel):
                     msgid = msg.target.uid
                     sender = msg.target.author.uid
                     displayname = self.group_members.get(wxid,{}).get(sender, self.get_nickname_by_wxid(sender))
-                    content = escape(msg.target.vendor_specific.get("wx_xml", ""), {
+                    content = escape(msg.target.vendor_specific.get("comwechat_info", {}).get("message", ""), {
                         "\n": "&#x0A;",
                         "\t": "&#x09;",
                         '"': "&quot;",
