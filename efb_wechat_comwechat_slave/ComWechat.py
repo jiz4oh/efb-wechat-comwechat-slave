@@ -1053,7 +1053,7 @@ class ComWeChatChannel(SlaveChannel):
             ids = load_message_ids(msgid)
             # 因为微信会将视频/文件等拆分成多条消息，默认使用第一条做回复目标，如果是视频 + 文本，则回复视频
             msgid = ids[0]
-            content = escape(msg.target.vendor_specific.get("wx_xml", ""), {
+            content = escape(msg.target.vendor_specific.get("comwechat_info", {}).get("message", ""), {
                 "\n": "&#x0A;",
                 "\t": "&#x09;",
                 '"': "&quot;",
