@@ -604,17 +604,6 @@ class ComWeChatChannel(SlaveChannel):
             efb_msg = Message(
                 type=MsgType.Text,
                 text=text,
-                commands = MessageCommands([
-                    MessageCommand(
-                        name=("Retry"),
-                        callable_name="retry_download",
-                        kwargs={
-                            "msgid": msg["msgid"],
-                            "msgtype": msg["type"],
-                            "chatuid": chat.uid,
-                        },
-                    )
-                ])
             )
             self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         else:
