@@ -148,7 +148,7 @@ class ComWeChatChannel(SlaveChannel):
                 self.get_chat(sender)
             except EFBChatNotFound:
                 self.friends.append(chat)
-                coordinator.send_status(ChatUpdates(channel=self, new_chats=[chat]))
+                coordinator.send_status(ChatUpdates(channel=self, new_chats=[sender]))
 
             if sender.startswith('gh_'):
                 chat.vendor_specific = {'is_mp' : True}
