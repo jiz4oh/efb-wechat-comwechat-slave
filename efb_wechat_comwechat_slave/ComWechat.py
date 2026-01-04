@@ -650,6 +650,8 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         m = MsgProcess(msg, chat)
+                        m.edit = True
+                        m.edit_media = True
                         if commands: 
                             m.commands = MessageCommands(commands)
                         m.vendor_specific["wechat_msgtype"] = msg_type
@@ -674,20 +676,16 @@ class ComWeChatChannel(SlaveChannel):
             efb_msg = Message(
                 type=MsgType.Text,
                 text=text,
-                commands = MessageCommands([
-                    MessageCommand(
-                        name=("Retry"),
-                        callable_name="retry_download",
-                        kwargs={
-                            "msgid": msg["msgid"],
-                            "msgtype": msg["type"],
-                            "chatuid": chat.uid,
-                        },
-                    )
-                ])
             )
             self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
         else:
+            msg_type = msg['type']
+            text = f"{msg_type} is downloading, please wait..."
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=text
+            )
+            self.send_efb_msgs(efb_msg, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
             self.file_msg[msg["filepath"]] = ( msg , author , chat )
 
     def retry_download(self, msgid, chatuid, msgtype):
@@ -703,7 +701,9 @@ class ComWeChatChannel(SlaveChannel):
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
-        path = self.GetMsgCdn(target.uid)
+        path = target.vendor_specific.get("comwechat_info", {}).get("filepath", "")
+        if not os.path.exists(path):
+            path = self.GetMsgCdn(target.uid)
         if not path:
             raise EFBMessageError("[重试失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
