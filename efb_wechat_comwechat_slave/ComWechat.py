@@ -629,7 +629,9 @@ class ComWeChatChannel(SlaveChannel):
         return "下载成功"
 
     def retry_download_target(self, target: Message = None):
-        path = self.GetMsgCdn(target.uid)
+        path = target.vendor_specific.get("comwechat_info", {}).get("filepath", "")
+        if not os.path.exists(path):
+            path = self.GetMsgCdn(target.uid)
         if not path:
             raise EFBMessageError("[重试失败,请在手机端查看,可通过 /retry 回复本条消息再次重试]")
         msgtype = target.vendor_specific.get("wechat_msgtype", None)
