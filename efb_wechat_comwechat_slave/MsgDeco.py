@@ -364,6 +364,21 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 items = xml.xpath('//item')
                 show_name = xml.xpath('//publisher/nickname/text()')[0] if '@app' in text else ''
                 efb_msg = list(map(partial(efb_mp_post_wrapper, show_name=show_name), items))
+        elif type == 6: # 文件分享消息
+            title = xml.xpath('string(/msg/appmsg/title)')
+            fileext = xml.xpath('string(/msg/appmsg/appattach/fileext)')
+            size = xml.xpath('string(/msg/appmsg/appattach/totallen)')
+            detail = title or '文件'
+            if fileext:
+                detail = f"{detail} ({fileext})"
+            if size and size.isdigit():
+                size_kb = round(int(size) / 1024, 1)
+                detail = f"{detail} - {size_kb} KB"
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=f"[文件] {detail}",
+                vendor_specific={ "is_mp": False }
+            )
         elif type == 8:
             efb_msg = Message(
                 type=MsgType.Unsupported,
@@ -454,6 +469,15 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 type=MsgType.Text,
                 text= f"{title}\n\n{desc}" ,
                 vendor_specific={ "is_forwarded": True }
+            )
+        elif type == 50: # 当前版本不支持展示的卡片
+            title = xml.xpath('string(/msg/appmsg/title)') or "当前版本不支持展示该内容"
+            url = xml.xpath('string(/msg/appmsg/url)')
+            text = title if not url else f"{title}\n{url}"
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=text,
+                vendor_specific={ "is_mp": True }
             )
         elif type == 51: # 视频（微信视频号分享）
             title = xml.xpath('/msg/appmsg/title/text()')[0]
