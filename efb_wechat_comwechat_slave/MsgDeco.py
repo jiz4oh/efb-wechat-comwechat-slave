@@ -66,7 +66,7 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
                 data['placeholder'] = f"\n{' ' * count}[Chat History]"
                 for i in parse_chat_history(dataitem.find('recordxml/recordinfo'), level + 1):
                     data['placeholder'] += f"\n{' ' * count}{i['formatted']}"
-                    data['children'] = i
+                    data['children'].append(i)
                 data['placeholder'] += f"\n{' ' * count}[Chat History]"
             elif data['datatype'] == '19':
                 data['placeholder'] = f"[Mini Program] {data['datatitle']}"
