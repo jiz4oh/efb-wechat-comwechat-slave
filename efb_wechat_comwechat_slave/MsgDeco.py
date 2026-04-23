@@ -60,8 +60,17 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
                 data['placeholder'] = '[Video]'
             elif data['datatype'] == '5':
                 data['placeholder'] = f"[Link] {data['datatitle']}"
+            elif data['datatype'] == '6':
+                poiname = _item_text(dataitem, 'poiname')
+                label = _item_text(dataitem, 'label')
+                location_name = poiname or label or data['datadesc']
+                data['placeholder'] = f"[Location] {location_name}".strip()
             elif data['datatype'] == '8':
-                data['placeholder'] = f"[File] {data['datatitle']}"
+                file_title = data['datatitle'] or data['datafmt'] or dataitem.get('dataid', '')
+                if dataitem.get('htmlid') == 'WeNoteHtmlFile':
+                    data['placeholder'] = f"[Note] {file_title}".strip()
+                else:
+                    data['placeholder'] = f"[File] {file_title}".strip()
             elif data['datatype'] == '17':
                 data['placeholder'] = f"\n{' ' * count}[Chat History]"
                 for i in parse_chat_history(dataitem.find('recordxml/recordinfo'), level + 1):
@@ -70,6 +79,15 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
                 data['placeholder'] += f"\n{' ' * count}[Chat History]"
             elif data['datatype'] == '19':
                 data['placeholder'] = f"[Mini Program] {data['datatitle']}"
+            elif data['datatype'] == '22':
+                finder_nickname = _item_text(dataitem, 'nickname')
+                finder_desc = _item_text(dataitem, 'desc') or data['datadesc']
+                media_count = _item_text(dataitem, 'mediaCount')
+                finder_title = data['datatitle'] or finder_desc or finder_nickname
+                if media_count:
+                    data['placeholder'] = f"[Finder] {finder_title} ({media_count} media)".strip()
+                else:
+                    data['placeholder'] = f"[Finder] {finder_title}".strip()
             else:
                 data['placeholder'] = data['datadesc'] or data['datatitle']
 
