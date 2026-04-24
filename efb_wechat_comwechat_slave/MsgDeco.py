@@ -62,16 +62,34 @@ def parse_chat_history(xml, level: int = 1) -> list[dict]:
                 data['placeholder'] = '[Video]'
             elif data['datatype'] == '5':
                 data['placeholder'] = f"[Link] {data['datatitle']}"
+            elif data['datatype'] == '6':
+                poiname = _item_text(dataitem, 'poiname')
+                label = _item_text(dataitem, 'label')
+                location_name = poiname or label or data['datadesc']
+                data['placeholder'] = f"[Location] {location_name}".strip()
             elif data['datatype'] == '8':
-                data['placeholder'] = f"[File] {data['datatitle']}"
+                file_title = data['datatitle'] or data['datafmt'] or dataitem.get('dataid', '')
+                if dataitem.get('htmlid') == 'WeNoteHtmlFile':
+                    data['placeholder'] = f"[Note] {file_title}".strip()
+                else:
+                    data['placeholder'] = f"[File] {file_title}".strip()
             elif data['datatype'] == '17':
                 data['placeholder'] = f"\n{' ' * count}[Chat History]"
                 for i in parse_chat_history(dataitem.find('recordxml/recordinfo'), level + 1):
                     data['placeholder'] += f"\n{' ' * count}{i['formatted']}"
-                    data['children'] = i
+                    data['children'].append(i)
                 data['placeholder'] += f"\n{' ' * count}[Chat History]"
             elif data['datatype'] == '19':
                 data['placeholder'] = f"[Mini Program] {data['datatitle']}"
+            elif data['datatype'] == '22':
+                finder_nickname = _item_text(dataitem, 'nickname')
+                finder_desc = _item_text(dataitem, 'desc') or data['datadesc']
+                media_count = _item_text(dataitem, 'mediaCount')
+                finder_title = data['datatitle'] or finder_desc or finder_nickname
+                if media_count:
+                    data['placeholder'] = f"[Finder] {finder_title} ({media_count} media)".strip()
+                else:
+                    data['placeholder'] = f"[Finder] {finder_title}".strip()
             else:
                 data['placeholder'] = data['datadesc'] or data['datatitle']
 
@@ -367,6 +385,21 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 items = xml.xpath('//item')
                 show_name = xml.xpath('//publisher/nickname/text()')[0] if '@app' in text else ''
                 efb_msg = list(map(partial(efb_mp_post_wrapper, show_name=show_name), items))
+        elif type == 6: # 文件分享消息
+            title = xml.xpath('string(/msg/appmsg/title)')
+            fileext = xml.xpath('string(/msg/appmsg/appattach/fileext)')
+            size = xml.xpath('string(/msg/appmsg/appattach/totallen)')
+            detail = title or '文件'
+            if fileext:
+                detail = f"{detail} ({fileext})"
+            if size and size.isdigit():
+                size_kb = round(int(size) / 1024, 1)
+                detail = f"{detail} - {size_kb} KB"
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=f"[文件] {detail}",
+                vendor_specific={ "is_mp": False }
+            )
         elif type == 8:
             efb_msg = Message(
                 type=MsgType.Unsupported,
@@ -457,6 +490,15 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 type=MsgType.Text,
                 text= f"{title}\n\n{desc}" ,
                 vendor_specific={ "is_forwarded": True }
+            )
+        elif type == 50: # 当前版本不支持展示的卡片
+            title = xml.xpath('string(/msg/appmsg/title)') or "当前版本不支持展示该内容"
+            url = xml.xpath('string(/msg/appmsg/url)')
+            text = title if not url else f"{title}\n{url}"
+            efb_msg = Message(
+                type=MsgType.Text,
+                text=text,
+                vendor_specific={ "is_mp": True }
             )
         elif type == 51: # 视频（微信视频号分享）
             title = xml.xpath('/msg/appmsg/title/text()')[0]
