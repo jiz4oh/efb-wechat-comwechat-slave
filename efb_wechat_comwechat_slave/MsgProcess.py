@@ -1,7 +1,6 @@
 from typing import Union, List
 import base64
 import tempfile
-import logging
 from .Utils import *
 from .MsgDeco import *
 import re
@@ -24,7 +23,7 @@ def MsgWrapper(msg, efb_msgs:  Union[Message, List[Message]]):
         setattr(efb_msg, "vendor_specific", vendor_specific)
     return efb_msgs
 
-def MsgProcess(msg : dict , chat) -> Union[Message, List[Message]]:
+def MsgProcess(msg : dict , chat, direct_transfer: bool = False) -> Union[Message, List[Message]]:
 
     if msg["type"] == "text":
         at_list = {}
@@ -63,17 +62,17 @@ def MsgProcess(msg : dict , chat) -> Union[Message, List[Message]]:
             return efb_text_simple_wrapper("Image received and download failed. Please check it on your phone.")
 
     elif msg["type"] == "share":
-        if ("FileStorage" in msg["filepath"]) and ("Cache" not in msg["filepath"]):
-            file = load_local_file_to_temp(msg["filepath"])
+        if msg.get("filepath") and os.path.exists(msg["filepath"]) and ("Cache" not in msg["filepath"]):
+            file = load_local_file_for_transfer(msg["filepath"], direct_transfer)
             return efb_file_wrapper(file, os.path.basename(msg["filepath"]))
         return efb_share_link_wrapper(msg, chat)  # may return msgs in a list
 
     elif msg["type"] == "voice":
-        file = convert_silk_to_mp3(load_local_file_to_temp(msg["filepath"]))
+        file = convert_silk_to_mp3(load_local_file_for_transfer(msg["filepath"], direct_transfer))
         return efb_voice_wrapper(file , file.name + ".ogg")
 
     elif msg["type"] == "video":
-        file = load_local_file_to_temp(msg["filepath"])
+        file = load_local_file_for_transfer(msg["filepath"], direct_transfer)
         return efb_video_wrapper(file)
 
     elif msg["type"] == "location":

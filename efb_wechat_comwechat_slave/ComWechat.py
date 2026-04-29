@@ -78,6 +78,7 @@ class ComWeChatChannel(SlaveChannel):
         self.logger.info("ComWeChat Slave Channel initialized.")
         self.logger.info("Version: %s" % self.__version__)
         self.config = load_config(efb_utils.get_config_path(self.channel_id))
+        self.direct_transfer = "direct_transfer" in self.config
         self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
@@ -524,7 +525,12 @@ class ComWeChatChannel(SlaveChannel):
             self.file_msg[msg["filepath"]] = ( msg , author , chat )
             return
 
-        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        self.send_efb_msgs(
+            MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
+            author=author,
+            chat=chat,
+            uid=MessageID(str(msg['msgid']))
+        )
 
     def handle_file_msg(self):
         while True:
@@ -556,7 +562,12 @@ class ComWeChatChannel(SlaveChannel):
 
                     if flag:
                         del self.file_msg[path]
-                        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+                        self.send_efb_msgs(
+                            MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
+                            author=author,
+                            chat=chat,
+                            uid=MessageID(str(msg['msgid'])),
+                        )
 
             if len(self.delete_file):
                 for k in list(self.delete_file.keys()):
