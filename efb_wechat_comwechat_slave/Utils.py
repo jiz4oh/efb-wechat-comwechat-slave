@@ -96,6 +96,14 @@ def load_local_file_to_temp(file : str) -> tempfile:
     f.close()
     return ret_file
 
+def load_local_file_for_transfer(file: str, direct_transfer: bool = False) -> IO[bytes]:
+    """
+    根据 direct_transfer 选择本地直传或临时文件传输。
+    """
+    if direct_transfer:
+        return open(file, "rb")
+    return load_local_file_to_temp(file)
+
 def load_temp_file_to_local(file : tempfile , path : str) -> None:
     """
     从临时文件写到本地

@@ -80,6 +80,7 @@ class ComWeChatChannel(SlaveChannel):
         self.logger.info("ComWeChat Slave Channel initialized.")
         self.logger.info("Version: %s" % self.__version__)
         self.config = load_config(efb_utils.get_config_path(self.channel_id))
+        self.direct_transfer = "direct_transfer" in self.config
         self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
@@ -606,7 +607,12 @@ class ComWeChatChannel(SlaveChannel):
             self._send_file_msg(msg , author , chat )
             return
 
-        self.send_efb_msgs(MsgWrapper(msg, MsgProcess(msg, chat)), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+        self.send_efb_msgs(
+            MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
+            author=author,
+            chat=chat,
+            uid=MessageID(str(msg['msgid']))
+        )
 
     def handle_file_msg(self):
         while True:
@@ -649,7 +655,7 @@ class ComWeChatChannel(SlaveChannel):
                             flag = True
 
                     if flag:
-                        m = MsgProcess(msg, chat)
+                        m = MsgProcess(msg, chat, self.direct_transfer)
                         m.edit = True
                         m.edit_media = True
                         if commands: 
