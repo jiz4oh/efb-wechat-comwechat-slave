@@ -224,7 +224,7 @@ class ComWeChatChannel(SlaveChannel):
                 self.get_chat(sender)
             except EFBChatNotFound:
                 self.groups.append(chat)
-                coordinator.send_status(ChatUpdates(channel=self, new_chats=[chat]))
+                coordinator.send_status(ChatUpdates(channel=self, new_chats=[sender]))
 
             try:
                 name = self.contacts[wxid]
