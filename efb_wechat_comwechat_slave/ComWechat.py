@@ -510,6 +510,9 @@ class ComWeChatChannel(SlaveChannel):
 
         if msg["msgid"] not in self.cache:
             self.cache[msg["msgid"]] = msg["type"]
+            master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=msg["msgid"])
+            if master_message is not None:
+                return
         else:
             if self.cache[msg["msgid"]] == msg["type"]:
                 return
