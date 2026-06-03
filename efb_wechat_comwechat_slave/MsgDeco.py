@@ -313,27 +313,65 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 )
             except:
                 pass
-        elif type in [ 4 , 36 ]: # 至少包含小红书分享 , 京东农场 , 滴滴打车
-            title = xml.xpath('/msg/appmsg/title/text()')[0]
-            try:
-                des = xml.xpath('/msg/appmsg/des/text()')[0]
-            except:
-                des = ""
-            url = xml.xpath('/msg/appmsg/url/text()')[0]
-            app = xml.xpath('/msg/appinfo/appname/text()')[0]
-            description = f"{des}\n---- from {app}"
+        elif type in [ 4 , 36 ]: # 至少包含小红书分享 , 京东农场 , 滴滴打车 / 部分卡片无 url
+            title = xml.xpath('string(/msg/appmsg/title)')
+            des = xml.xpath('string(/msg/appmsg/des)')
+            url = xml.xpath('string(/msg/appmsg/url)')
+            app = xml.xpath('string(/msg/appinfo/appname)') or xml.xpath('string(/msg/appmsg/sourcedisplayname)')
+            pagepath = xml.xpath('string(/msg/appmsg/weappinfo/pagepath)')
+            commands = []
+            vendor_specific = { "is_mp": False }
+            if not url:
+                source_display = xml.xpath('string(/msg/appmsg/sourcedisplayname)') or ""
+                has_stock_pagepath = isinstance(pagepath, str) and ("pages/quote/quote.html?s=" in pagepath)
+                has_stock_code_in_title = bool(re.search(r"\(\d{6}\)", title or ""))
+                weapp_appid = xml.xpath('string(/msg/appmsg/weappinfo/appid)') or ""
+                is_stock_card = (
+                    type == 36 and (
+                        app == "腾讯微证券"
+                        or "腾讯微证券" in source_display
+                        or weapp_appid == "wx4eff699c2e813ab6"
+                    ) and (
+                        has_stock_pagepath
+                        or has_stock_code_in_title
+                    )
+                )
+
+                if is_stock_card:
+                    app = "腾讯微证券"
+                    stock_urls = _build_stock_urls(title=title, pagepath=pagepath)
+                    if stock_urls:
+                        url = stock_urls["ths"]
+                        commands = [
+                            MessageCommand(
+                                name="东方财富",
+                                callable_name="open_external_link",
+                                kwargs={"url": stock_urls["eastmoney"]},
+                            ),
+                            MessageCommand(
+                                name="同花顺",
+                                callable_name="open_external_link",
+                                kwargs={"url": stock_urls["ths"]},
+                            ),
+                        ]
+                        vendor_specific["stock_market"] = stock_urls["market"]
+                        vendor_specific["stock_code"] = stock_urls["code"]
+
+            description = f"{des}\n---- from {app}" if des else f"---- from {app}"
             attribute = LinkAttribute(
                 title = title,
                 description = description,
-                url = url ,
+                url = url,
                 image = None
             )
             efb_msg = Message(
                 attributes=attribute,
                 type=MsgType.Link,
-                text= None,
-                vendor_specific={ "is_mp": False }
+                text=None,
+                vendor_specific = vendor_specific,
             )
+            if commands:
+                efb_msg.commands = MessageCommands(commands)
         elif type == 5: # xml链接
             if len(xml.xpath('/msg/appmsg/showtype/text()'))!=0:
                 showtype = int(xml.xpath('/msg/appmsg/showtype/text()')[0])
