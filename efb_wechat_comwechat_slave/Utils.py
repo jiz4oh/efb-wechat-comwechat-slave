@@ -5,10 +5,16 @@ import requests as requests
 import re
 import json
 import yaml
-from typing import Dict , Any
+from typing import Dict , Any, IO
 import pilk
 import pydub
 import os
+
+VOICE_OGG_EXPORT_KWARGS = {
+    "format": "ogg",
+    "codec": "libopus",
+    "parameters": ['-vbr', 'on'],
+}
 
 #从本地读取配置
 def load_config(path : str) -> Dict[str, None]:
@@ -113,18 +119,36 @@ def load_temp_file_to_local(file : tempfile , path : str) -> None:
 
 def convert_silk_to_mp3(file : tempfile) -> tempfile:
     """
-    将silk文件转换为mp3文件
+    将微信语音统一转换为 OGG 文件。
     """
-    f = tempfile.NamedTemporaryFile()
+    f = tempfile.NamedTemporaryFile(suffix=".ogg")
     file.seek(0)
     silk_header = file.read(10)
     file.seek(0)
+
     if b"#!SILK_V3" in silk_header:
-        pilk.decode(file.name, f.name)
+        pcm_file = tempfile.NamedTemporaryFile()
+        pilk.decode(file.name, pcm_file.name)
         file.close()
-        pydub.AudioSegment.from_raw(file= f , sample_width=2, frame_rate=24000, channels=1) \
-            .export( f , format="ogg", codec="libopus",
-                    parameters=['-vbr', 'on'])
+        pydub.AudioSegment.from_raw(
+            file=pcm_file,
+            sample_width=2,
+            frame_rate=24000,
+            channels=1,
+        ).export(f.name, **VOICE_OGG_EXPORT_KWARGS)
+        pcm_file.close()
+    elif silk_header.startswith((b"#!AMR\n", b"#!AMR-WB\n")):
+        pydub.AudioSegment.from_file(file.name, format="amr").export(
+            f.name,
+            **VOICE_OGG_EXPORT_KWARGS,
+        )
+    else:
+        pydub.AudioSegment.from_file(file.name).export(
+            f.name,
+            **VOICE_OGG_EXPORT_KWARGS,
+        )
+
+    f.seek(0)
     return f
 
 
