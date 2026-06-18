@@ -5,7 +5,7 @@ import requests as requests
 import re
 import json
 import yaml
-from typing import Dict , Any, IO
+from typing import Dict , Any, IO, Optional
 import pilk
 import pydub
 import os
@@ -60,7 +60,13 @@ def download_file(url: str, retry: int = 3) -> tempfile:
 def wechatimagedecode( file : str) -> tempfile:
     """
     代码来源 https://github.com/zhangxiaoyang/WechatImageDecoder
+    图片消息优先读取 ImageHook 已解码文件，缺失时回退 dat 解码。
     """
+    decoded_file = resolve_hooked_wechat_image_path(file)
+    if decoded_file:
+        print(f"123 {decoded_file}", flush=True)
+        return open(decoded_file, "rb")
+    print(456, flush=True)
     def do_magic(header_code, buf):
         return header_code ^ list(buf)[0] if buf else 0x00
     
@@ -84,8 +90,9 @@ def wechatimagedecode( file : str) -> tempfile:
     with open(file , 'rb') as f:
         buf = bytearray(f.read())
     file_type, magic = guess_encoding(buf)
+    file_type = file_type or "jpg"
 
-    ret_file = tempfile.NamedTemporaryFile()
+    ret_file = tempfile.NamedTemporaryFile(suffix=f".{file_type}")
     with open(ret_file.name , 'wb') as f:
         f.write(decode(magic, buf))
     f.close()
@@ -108,6 +115,44 @@ def load_local_file_for_transfer(file: str, direct_transfer: bool = False) -> IO
     if direct_transfer:
         return open(file, "rb")
     return load_local_file_to_temp(file)
+
+IMAGE_HOOK_EXTENSIONS = (".jpg", ".png", ".gif")
+
+def resolve_hooked_wechat_image_path(file: str) -> Optional[str]:
+    """
+    从微信 dat 路径推导 ImageHook 已解码后的图片路径。
+    """
+    if not file:
+        return None
+
+    normalized_file = file.replace("\\", "/")
+    basename = os.path.basename(normalized_file)
+    stem, suffix = os.path.splitext(basename)
+    suffix = suffix.lower()
+
+    if not stem:
+        return None
+
+    if suffix in IMAGE_HOOK_EXTENSIONS and os.path.exists(normalized_file):
+        return normalized_file
+
+    candidate_dirs = []
+    if "/FileStorage/" in normalized_file:
+        candidate_dirs.append(normalized_file.split("/FileStorage/", 1)[0])
+
+    if suffix in IMAGE_HOOK_EXTENSIONS:
+        candidate_dirs.append(os.path.dirname(normalized_file))
+
+    checked_dirs = set()
+    for folder in candidate_dirs:
+        if not folder or folder in checked_dirs:
+            continue
+        checked_dirs.add(folder)
+        for ext in IMAGE_HOOK_EXTENSIONS:
+            candidate = os.path.join(folder, f"{stem}{ext}")
+            if os.path.exists(candidate):
+                return candidate
+    return None
 
 def load_temp_file_to_local(file : tempfile , path : str) -> None:
     """
