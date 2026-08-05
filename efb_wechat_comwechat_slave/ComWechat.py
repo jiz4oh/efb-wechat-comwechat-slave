@@ -498,7 +498,7 @@ class ComWeChatChannel(SlaveChannel):
         if "target" in content:
             msg.target = content['target']
 
-        self.send_efb_msgs(msg, uid=int(time.time()), chat=chat, author=author, type=MsgType.Text)
+        self.send_efb_msgs(msg, uid=MessageID(str(int(time.time()))), chat=chat, author=author, type=MsgType.Text)
 
     def handle_msg(self , msg : Dict[str, Any] , author : 'ChatMember' , chat : 'Chat'):
         emojiList = re.findall('\[[\w|！|!| ]+\]' , msg["message"])
