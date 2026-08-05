@@ -27,6 +27,20 @@ class GroupChatInfo(BaseModel):
             (('group_uid', 'wxid'), True),  # Unique index on group_uid and wxid
         )
 
+class WxMsgLog(BaseModel):
+    wx_msg_id = CharField()
+    # 通常等于 wx_msg_id，在 efb master 发送富文本消息时会是多个 wx_msg_id 合并后的值
+    efb_msg_id = CharField()
+    wx_type = CharField()
+    wxid = CharField()
+    sender = CharField()
+    xml = TextField()
+
+    class Meta:
+        indexes = (
+            (('group_uid', 'wxid'), True),  # Unique index on group_uid and wxid
+        )
+
 
 class DatabaseManager:
     logger = logging.getLogger(__name__)

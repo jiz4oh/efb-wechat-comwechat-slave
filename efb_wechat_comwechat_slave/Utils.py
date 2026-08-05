@@ -1,6 +1,7 @@
 import logging
 import tempfile
 import threading
+from ehforwarderbot.types import MessageID
 import requests as requests
 import re
 import json
@@ -196,6 +197,11 @@ def convert_silk_to_mp3(file : tempfile) -> tempfile:
     f.seek(0)
     return f
 
+def dump_message_ids(ids: list[MessageID]) -> MessageID:
+    return MessageID(",".join(ids))
+
+def load_message_ids(id: MessageID) -> list[MessageID]:
+    return id.split(',')
 
 WC_EMOTICON_CONVERSION = {
     '[微笑]': '😃', '[Smile]': '😃',
