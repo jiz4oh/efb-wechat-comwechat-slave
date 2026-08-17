@@ -32,7 +32,6 @@ from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
-from .MsgDeco import qutoed_text
 from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .db import DatabaseManager
@@ -948,56 +947,49 @@ class ComWeChatChannel(SlaveChannel):
         text_to_send = msg.text
 
         if isinstance(msg.target, Message) and text_to_send:
-            if isinstance(msg.target.author, SelfChatMember) and isinstance(msg.target.deliver_to, SlaveChannel):
-                text_to_send = qutoed_text(msg.target.text or msg.target.type.name, text_to_send)
-                key = (wxid, text_to_send)
-                with self.pending_lock:
-                    self.sent_msgs[key] = threading.Event()
-                self.bot.SendText(wxid=wxid, msg=text_to_send)
+            msgid = load_message_ids(msg.target.uid)[0]
+            if isinstance(msg.target.author, SelfChatMember):
+                displayname = self.me["wxNickName"]
+                sender = self.wxid
             else:
-                msgid = load_message_ids(msg.target.uid)[0]
-                if isinstance(msg.target.author, SelfChatMember):
-                    displayname = self.me["wxNickName"]
-                    sender = self.wxid
-                else:
-                    sender = msg.target.author.uid
-                    displayname = self.group_members.get(wxid, {}).get(sender, msg.target.author.name)
-                content = escape(
-                    msg.target.vendor_specific.get("comwechat_info", {}).get("message", ""),
-                    {
-                        "\n": "&#x0A;",
-                        "\t": "&#x09;",
-                        '"': "&quot;",
-                    },
-                ) or msg.target.text
-                comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
-                if comwechat_info.get("type", None) == "animatedsticker":
-                    refer_type = 47
-                elif msg.target.type == MsgType.Image:
-                    refer_type = 3
-                elif msg.target.type == MsgType.Voice:
-                    refer_type = 34
-                elif msg.target.type == MsgType.Video:
-                    refer_type = 43
-                elif msg.target.type == MsgType.Sticker:
-                    refer_type = 47
-                elif msg.target.type == MsgType.Location:
-                    refer_type = 48
-                elif msg.target.type == MsgType.File:
-                    refer_type = 49
-                elif comwechat_info.get("type", None) == "share":
-                    refer_type = 49
-                else:
-                    refer_type = 1
-                if content:
-                    content = "<content>%s</content>" % content
-                else:
-                    content = "<content />"
-                xml = QUOTE_MESSAGE % (self.wxid, text_to_send, refer_type, msgid, sender, sender, displayname, content)
-                key = (wxid, xml)
-                with self.pending_lock:
-                    self.sent_msgs[key] = threading.Event()
-                self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
+                sender = msg.target.author.uid
+                displayname = self.group_members.get(wxid, {}).get(sender, msg.target.author.name)
+            content = escape(
+                msg.target.vendor_specific.get("comwechat_info", {}).get("message", ""),
+                {
+                    "\n": "&#x0A;",
+                    "\t": "&#x09;",
+                    '"': "&quot;",
+                },
+            ) or msg.target.text
+            comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
+            if comwechat_info.get("type", None) == "animatedsticker":
+                refer_type = 47
+            elif msg.target.type == MsgType.Image:
+                refer_type = 3
+            elif msg.target.type == MsgType.Voice:
+                refer_type = 34
+            elif msg.target.type == MsgType.Video:
+                refer_type = 43
+            elif msg.target.type == MsgType.Sticker:
+                refer_type = 47
+            elif msg.target.type == MsgType.Location:
+                refer_type = 48
+            elif msg.target.type == MsgType.File:
+                refer_type = 49
+            elif comwechat_info.get("type", None) == "share":
+                refer_type = 49
+            else:
+                refer_type = 1
+            if content:
+                content = "<content>%s</content>" % content
+            else:
+                content = "<content />"
+            xml = QUOTE_MESSAGE % (self.wxid, text_to_send, refer_type, msgid, sender, sender, displayname, content)
+            key = (wxid, xml)
+            with self.pending_lock:
+                self.sent_msgs[key] = threading.Event()
+            self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
         else:
             key = (wxid, text_to_send)
             with self.pending_lock:
