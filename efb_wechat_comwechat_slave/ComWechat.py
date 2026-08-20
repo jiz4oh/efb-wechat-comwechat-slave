@@ -20,6 +20,7 @@ from cachetools import TTLCache
 
 from ehforwarderbot import MsgType, Chat, Message, Status, coordinator
 from wechatrobot import WeChatRobot
+from wechatrobot import ChatRoomData_pb2 as ChatRoom
 
 from . import __version__ as version
 
@@ -33,9 +34,10 @@ from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgProcess import MsgProcess, MsgWrapper
-from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
+from .Utils import download_file , load_config , load_temp_file_to_local , resolve_hooked_wechat_image_path, WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
 from .db import DatabaseManager
 from .Constant import QUOTE_MESSAGE
+from .dbkey import DbKeyManager
 
 from rich.console import Console
 from rich import print as rprint
@@ -59,7 +61,7 @@ class ComWeChatChannel(SlaveChannel):
     nicknames : Dict = {}
     group_members : Dict = {}       # {"group_id" : { "wxID" : "displayName"}}
 
-    time_out : int = 120
+    time_out : int = int(os.getenv("EFB_MEDIA_TIMEOUT", "300"))
     cache =  TTLCache(maxsize=200, ttl= time_out)  # 缓存发送过的消息ID
     file_msg : Dict = {}                           # 存储待修改的文件类消息 {path : msg}
     delete_file : Dict = {}                        # 存储待删除的消息 {path : time}
@@ -97,6 +99,7 @@ class ComWeChatChannel(SlaveChannel):
         self.dir = self.config["dir"]
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
+        self.dbkey: DbKeyManager = DbKeyManager(self)
         ChatMgr.slave_channel = self
         self.user_auth_chat = ChatMgr.build_efb_chat_as_system_user(EFBSystemUser(
             uid = self.channel_name,
@@ -615,42 +618,78 @@ class ComWeChatChannel(SlaveChannel):
             uid=MessageID(str(msg['msgid']))
         )
 
+    def _process_pending_file(self, path):
+        flag = False
+        msg, author, chat = self.file_msg[path]
+        resolved_path = resolve_hooked_wechat_image_path(path) if msg["type"] == "image" else None
+        if resolved_path:
+            msg["filepath"] = resolved_path
+            flag = True
+        elif os.path.isfile(path):
+            flag = True
+        elif (int(time.time()) - msg["timestamp"]) > self.time_out:
+            msg_type = msg["type"]
+            msg['message'] = f"[{msg_type} 下载超时,请在手机端查看]"
+            msg["type"] = "text"
+            flag = True
+        elif msg["type"] == "voice":
+            sql = f'SELECT Buf FROM Media WHERE Reserved0 = {msg["msgid"]}'
+            try:
+                dbresp = self.query_database(db_name="MediaMSG0.db", sql=sql)
+                dbresult = dbresp.get("data") or []
+                data_rows = dbresult
+                if dbresult and dbresult[0] and dbresult[0][0] == "Buf":
+                    data_rows = dbresult[1:]
+                if data_rows:
+                    filebuffer = data_rows[-1][0]
+                    decoded = bytes(base64.b64decode(filebuffer))
+                    with open(msg["filepath"], 'wb') as f:
+                        f.write(decoded)
+                    flag = True
+                else:
+                    self.logger.debug(
+                        "[voice-db-empty] msgid=%s db=%s sql=%s",
+                        msg.get("msgid"),
+                        "MediaMSG0.db",
+                        sql,
+                    )
+            except Exception as e:
+                self.bot.invalidate_db_handles()
+                self.logger.error(
+                    "[voice-db-failure] msgid=%s db=%s sql=%s error=%r",
+                    msg.get("msgid"),
+                    "MediaMSG0.db",
+                    sql,
+                    e,
+                    exc_info=True,
+                )
+
+        if flag:
+            del self.file_msg[path]
+            self.send_efb_msgs(
+                MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
+                author=author,
+                chat=chat,
+                uid=MessageID(str(msg['msgid'])),
+            )
+
     def handle_file_msg(self):
         while True:
             if len(self.file_msg) == 0:
                 time.sleep(1)
             else:
                 for path in list(self.file_msg.keys()):
-                    flag = False
-                    msg = self.file_msg[path][0]
-                    author = self.file_msg[path][1]
-                    chat = self.file_msg[path][2]
-                    if os.path.exists(path):
-                        flag = True
-                    elif (int(time.time()) - msg["timestamp"]) > self.time_out:
-                        msg_type = msg["type"]
-                        msg['message'] = f"[{msg_type} 下载超时,请在手机端查看]"
-                        msg["type"] = "text"
-                        flag = True
-                    elif msg["type"] == "voice":
-                        sql = f'SELECT Buf FROM Media WHERE Reserved0 = {msg["msgid"]}'
-                        dbresult = self.bot.QueryDatabase(db_handle=self.bot.GetDBHandle("MediaMSG0.db"), sql=sql)["data"]
-                        if len(dbresult) == 2:
-                            filebuffer = dbresult[1][0]
-                            decoded = bytes(base64.b64decode(filebuffer))
-                            with open(msg["filepath"], 'wb') as f:
-                                f.write(decoded)
-                            f.close()
-                            flag = True
-
-                    if flag:
-                        del self.file_msg[path]
-                        self.send_efb_msgs(
-                            MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
-                            author=author,
-                            chat=chat,
-                            uid=MessageID(str(msg['msgid'])),
+                    msg = {}
+                    try:
+                        msg = self.file_msg[path][0]
+                        self._process_pending_file(path)
+                    except Exception:
+                        self.file_msg.pop(path, None)
+                        self.logger.exception(
+                            "Failed to process pending media: type=%s msgid=%s filepath=%s",
+                            msg.get("type"), msg.get("msgid"), msg.get("filepath", path),
                         )
+                time.sleep(1)
 
             if len(self.delete_file):
                 for k in list(self.delete_file.keys()):
@@ -1036,7 +1075,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def get_chat_picture(self, chat: 'Chat') -> BinaryIO:
         wxid = chat.uid
-        result = self.bot.GetPictureBySql(wxid = wxid)
+        result = self.get_picture_by_sql(wxid = wxid)
         if result:
             return download_file(result)
         else:
@@ -1044,7 +1083,7 @@ class ComWeChatChannel(SlaveChannel):
 
     def get_chat_member_picture(self, chat_member: 'ChatMember') -> Optional[BinaryIO]:
         wxid = chat_member.uid
-        result = self.bot.GetPictureBySql(wxid = wxid)
+        result = self.get_picture_by_sql(wxid = wxid)
         if result:
             return download_file(result)
         else:
@@ -1085,7 +1124,7 @@ class ComWeChatChannel(SlaveChannel):
             if name == "":
                 name = wxid
         except:
-            data = self.bot.GetContactBySql(wxid = wxid)
+            data = self.get_contact_by_sql(wxid = wxid)
             if data:
                 name = data[3]
                 if name == "":
@@ -1114,6 +1153,93 @@ class ComWeChatChannel(SlaveChannel):
         self.me = self.bot.GetSelfInfo()["data"]
         self.wxid = self.me["wxId"]
 
+    def query_database(self, db_name: Optional[str] = None, sql: str = "", **params) -> Dict:
+        """Prefer dbkey-backed SQLCipher reads, then fall back to native handles."""
+        dbkey_result = self.dbkey.query(db_name, sql)
+        if dbkey_result is not None:
+            return dbkey_result
+        if db_name:
+            params["db_name"] = db_name
+        if sql:
+            params["sql"] = sql
+        return self.bot.QueryDatabase(**params)
+
+    def get_contact_by_sql(self, wxid: str) -> Optional[List[str]]:
+        if not wxid.endswith("@openim"):
+            db = "MicroMsg.db"
+            sql = f"select UserName,Alias,Remark,NickName,Type from Contact where UserName='{wxid}';"
+        else:
+            db = "OpenIMContact.db"
+            sql = f"select UserName,'' as Alias,Remark,NickName,Type from OpenIMContact where UserName='{wxid}';"
+        result = self.query_database(db_name=db, sql=sql)
+        data = result.get("data") or []
+        if len(data) > 1:
+            return data[1]
+        return None
+
+    def get_contact_list_by_sql(self) -> Dict:
+        contact_data: Dict[str, Dict[str, str]] = {}
+        contact_response = self.query_database(
+            db_name="MicroMsg.db",
+            sql="select UserName,Alias,Remark,NickName,Type from Contact",
+        )
+        contact_list = contact_response.get("data") or []
+        for index in range(1, len(contact_list)):
+            wxid = contact_list[index][0]
+            contact_data[wxid] = {
+                "alias": contact_list[index][1],
+                "remark": contact_list[index][2],
+                "nickname": contact_list[index][3],
+                "type": contact_list[index][4],
+            }
+        openim_response = self.query_database(
+            db_name="OpenIMContact.db",
+            sql="select UserName,'' as Alias,Remark,NickName,Type from OpenIMContact",
+        )
+        openim_list = openim_response.get("data") or []
+        for index in range(1, len(openim_list)):
+            wxid = openim_list[index][0]
+            contact_data[wxid] = {
+                "alias": openim_list[index][1],
+                "remark": openim_list[index][2],
+                "nickname": openim_list[index][3],
+                "type": openim_list[index][4],
+            }
+        return contact_data
+
+    def get_picture_by_sql(self, wxid: str) -> Optional[str]:
+        if not wxid.endswith("@openim"):
+            sql = f"select usrName,smallHeadImgUrl,bigHeadImgUrl from ContactHeadImgUrl where usrName='{wxid}';"
+            result = self.query_database(db_name="MicroMsg.db", sql=sql)
+        else:
+            sql = f"select UserName,SmallHeadImgUrl,BigHeadImgUrl from OpenIMContact where UserName='{wxid}';"
+            result = self.query_database(db_name="OpenIMContact.db", sql=sql)
+        try:
+            if result["data"][1][2] != "":
+                return result["data"][1][2]
+            if result["data"][1][1] != "":
+                return result["data"][1][1]
+            return None
+        except Exception:
+            return None
+
+    def get_all_group_members_by_sql(self) -> Dict:
+        group_data: Dict[str, Dict[str, str]] = {}
+        response = self.query_database(
+            db_name="MicroMsg.db",
+            sql="select ChatRoomName,RoomData from ChatRoom",
+        )
+        member_list = response.get("data") or []
+        chatroom = ChatRoom.ChatRoomData()
+        for index in range(1, len(member_list)):
+            group_member = {}
+            chatroom.ParseFromString(bytes(base64.b64decode(member_list[index][1])))
+            for member in chatroom.members:
+                if member.displayName != "":
+                    group_member[member.wxID] = member.displayName
+            group_data[member_list[index][0]] = group_member
+        return group_data
+
     def get_group_alias_by(self, group_wxid, member_wxid):
         alias = self.group_members.get(group_wxid,{}).get(member_wxid , None)
         if alias == self.nicknames.get(member_wxid, None):
@@ -1126,7 +1252,7 @@ class ComWeChatChannel(SlaveChannel):
             if nickname == "":
                 nickname = wxid
         except:
-            data = self.bot.GetContactBySql(wxid = wxid)
+            data = self.get_contact_by_sql(wxid = wxid)
             if data:
                 nickname = data[3]
                 if nickname == "":
@@ -1142,7 +1268,7 @@ class ComWeChatChannel(SlaveChannel):
     def GetContactListBySql(self):
         new_chats = []
         modified_chats = []
-        contacts = self.bot.GetContactListBySql()
+        contacts = self.get_contact_list_by_sql()
         for contact in contacts:
             data = contacts[contact]
             name = (f"{data['remark']}({data['nickname']})") if data["remark"] else data["nickname"]
@@ -1194,7 +1320,7 @@ class ComWeChatChannel(SlaveChannel):
                 self.db.update_group_alias(group, wxid, alias)
 
     def GetGroupListBySql(self):
-        groups = self.bot.GetAllGroupMembersBySql()
+        groups = self.get_all_group_members_by_sql()
         for group, members in groups.items():
             with contextlib.suppress(EFBChatNotFound):
                 chat = self.get_chat(group)

@@ -62,10 +62,16 @@ class ChatMgr:
             m: ChatMember = chat.add_member(
                 **member
             )
-        if member.get('name', None) is not None:
-            m.name = member.get('name')
-        if member.get('alias', None) is not None:
-            m.alias = member.get('alias')
+        name = member.get('name')
+        alias = member.get('alias')
+        if isinstance(name, str) and name.startswith('wxid_') and alias:
+            m.name = alias
+            m.alias = None
+        else:
+            if name is not None:
+                m.name = name
+            if alias is not None:
+                m.alias = alias
         return m
 
     @staticmethod

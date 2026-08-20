@@ -4,5 +4,9 @@ build/*
 dist/*
 *.egg-info
 test*
+!tests/
+!tests/test_quote_self_image.py
+!tests/test_dbkey_priority.py
+!tests/test_voice_db_fallback.py
 __pycache__*
 task
