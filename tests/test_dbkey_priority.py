@@ -2,6 +2,7 @@ import ast
 import sys
 import unittest
 import importlib.util
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -17,6 +18,29 @@ def load_dbkey():
 
 
 class DbKeyPriorityTest(unittest.TestCase):
+    def test_database_names_discovers_media_shards_under_profile(self):
+        module = load_dbkey()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            wxid = "wxid_test"
+            msg_dir = root / wxid / "Msg" / "Multi"
+            msg_dir.mkdir(parents=True)
+            for name in ("MediaMSG2.db", "MediaMSG0.db", "MediaMSG10.db"):
+                (msg_dir / name).touch()
+            (msg_dir / "MicroMsg.db").touch()
+
+            channel = Mock()
+            channel.wxid = wxid
+            channel.channel_id = "honus.comwechat"
+            channel.dir = str(root)
+            channel.config = {"dir": str(root)}
+            manager = module.DbKeyManager(channel, data_dir=root / "profile", wechat_root=root)
+
+            self.assertEqual(
+                manager.database_names("MediaMSG"),
+                ["MediaMSG0.db", "MediaMSG2.db", "MediaMSG10.db"],
+            )
+
     def test_read_only_query_prefers_db_key(self):
         channel = Mock()
         channel.wxid = "wxid_test"

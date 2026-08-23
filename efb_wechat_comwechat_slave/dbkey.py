@@ -397,6 +397,26 @@ class DbKeyManager:
         migrated = self._migrate_legacy_key(wxid)
         return migrated if migrated.is_file() else None
 
+    def database_names(self, prefix: str) -> List[str]:
+        """Return database filenames visible under the active WeChat profile."""
+        if not prefix:
+            return []
+
+        roots = []
+        wxid = getattr(self.channel, "wxid", None)
+        if self._wechat_root is not None and wxid:
+            msg_root = Path(self._wechat_root) / wxid / "Msg"
+            roots.extend((msg_root, msg_root / "Multi"))
+        if self._data_dir is not None:
+            roots.extend((Path(self._data_dir), Path(self._data_dir) / "Multi"))
+
+        names = set()
+        for root in roots:
+            if not root.is_dir():
+                continue
+            names.update(path.name for path in root.glob(prefix + "*.db") if path.is_file())
+        return sorted(names, key=lambda name: (len(name), name))
+
     def _get_reader(self) -> Optional[DbKeyReader]:
         key_path = self._discover_key_path()
         if key_path is None:

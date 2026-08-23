@@ -45,6 +45,8 @@ from io import BytesIO
 from PIL import Image
 from typing import Callable
 
+VOICE_DATABASE_NAMES = ("MediaMSG0.db", "MediaMSG1.db", "MediaMSG2.db")
+
 class ComWeChatChannel(SlaveChannel):
     channel_name : str = "ComWechatChannel"
     channel_emoji : str = "💻"
@@ -100,6 +102,7 @@ class ComWeChatChannel(SlaveChannel):
         if not self.dir.endswith(os.path.sep):
             self.dir += os.path.sep
         self.dbkey: DbKeyManager = DbKeyManager(self)
+        self._voice_db_names: Optional[List[str]] = None
         ChatMgr.slave_channel = self
         self.user_auth_chat = ChatMgr.build_efb_chat_as_system_user(EFBSystemUser(
             uid = self.channel_name,
@@ -618,6 +621,41 @@ class ComWeChatChannel(SlaveChannel):
             uid=MessageID(str(msg['msgid']))
         )
 
+    def _voice_database_names(self, refresh=False):
+        cached = getattr(self, "_voice_db_names", None)
+        if cached is not None and not refresh:
+            return list(cached)
+
+        names = []
+        dbkey = getattr(self, "dbkey", None)
+        discover = getattr(dbkey, "database_names", None)
+        if callable(discover):
+            try:
+                names = [
+                    name
+                    for name in (discover("MediaMSG") or [])
+                    if isinstance(name, str) and name.startswith("MediaMSG")
+                ]
+            except Exception:
+                self.logger.debug("Failed to discover WeChat media databases", exc_info=True)
+
+        if not names:
+            try:
+                handles = self.bot.GetDatabaseHandles().get("data") or []
+                names = [
+                    item.get("db_name")
+                    for item in handles
+                    if isinstance(item, dict)
+                    and isinstance(item.get("db_name"), str)
+                    and item["db_name"].startswith("MediaMSG")
+                ]
+            except Exception:
+                self.logger.debug("Failed to discover native media database handles", exc_info=True)
+
+        if not names:
+            names = list(VOICE_DATABASE_NAMES)
+        return sorted(set(names), key=lambda name: (len(name), name))
+
     def _process_pending_file(self, path):
         flag = False
         msg, author, chat = self.file_msg[path]
@@ -634,35 +672,80 @@ class ComWeChatChannel(SlaveChannel):
             flag = True
         elif msg["type"] == "voice":
             sql = f'SELECT Buf FROM Media WHERE Reserved0 = {msg["msgid"]}'
-            try:
-                dbresp = self.query_database(db_name="MediaMSG0.db", sql=sql)
-                dbresult = dbresp.get("data") or []
-                data_rows = dbresult
-                if dbresult and dbresult[0] and dbresult[0][0] == "Buf":
-                    data_rows = dbresult[1:]
-                if data_rows:
-                    filebuffer = data_rows[-1][0]
-                    decoded = bytes(base64.b64decode(filebuffer))
-                    with open(msg["filepath"], 'wb') as f:
-                        f.write(decoded)
-                    flag = True
+            queried_databases = []
+
+            def query_voice_databases(database_names):
+                queried_databases.clear()
+                query_failed = False
+                query_error = None
+                for db_name in database_names:
+                    queried_databases.append(db_name)
+                    try:
+                        dbresp = self.query_database(db_name=db_name, sql=sql)
+                        if not isinstance(dbresp, dict) or dbresp.get("result") != "OK":
+                            query_failed = True
+                            query_error = "voice database query returned %r" % (dbresp,)
+                            continue
+
+                        dbresult = dbresp.get("data") or []
+                        data_rows = dbresult
+                        if dbresult and dbresult[0] and dbresult[0][0] == "Buf":
+                            data_rows = dbresult[1:]
+                    except Exception as exc:
+                        query_failed = True
+                        query_error = repr(exc)
+                        continue
+
+                    if data_rows:
+                        return data_rows[-1][0], False, None
+                return None, query_failed, query_error
+
+            database_names = self._voice_database_names()
+            for attempt in range(2):
+                filebuffer, query_failed, query_error = query_voice_databases(database_names)
+                if filebuffer is None and query_failed:
+                    self._voice_db_names = None
+                    if attempt == 0:
+                        try:
+                            self.bot.invalidate_db_handles()
+                        except Exception:
+                            self.logger.debug("Failed to invalidate native database handles", exc_info=True)
+                        database_names = self._voice_database_names(refresh=True)
+                        continue
+
+                    self.logger.error(
+                        "[voice-db-failure] msgid=%s db=%s sql=%s error=%s",
+                        msg.get("msgid"),
+                        ",".join(queried_databases),
+                        sql,
+                        query_error,
+                    )
+                    break
+
+                self._voice_db_names = list(database_names)
+                if filebuffer is not None:
+                    try:
+                        decoded = bytes(base64.b64decode(filebuffer))
+                        with open(msg["filepath"], 'wb') as f:
+                            f.write(decoded)
+                    except Exception as e:
+                        self.logger.error(
+                            "[voice-file-failure] msgid=%s path=%s error=%r",
+                            msg.get("msgid"),
+                            msg.get("filepath"),
+                            e,
+                            exc_info=True,
+                        )
+                    else:
+                        flag = True
                 else:
                     self.logger.debug(
                         "[voice-db-empty] msgid=%s db=%s sql=%s",
                         msg.get("msgid"),
-                        "MediaMSG0.db",
+                        ",".join(queried_databases),
                         sql,
                     )
-            except Exception as e:
-                self.bot.invalidate_db_handles()
-                self.logger.error(
-                    "[voice-db-failure] msgid=%s db=%s sql=%s error=%r",
-                    msg.get("msgid"),
-                    "MediaMSG0.db",
-                    sql,
-                    e,
-                    exc_info=True,
-                )
+                break
 
         if flag:
             del self.file_msg[path]
