@@ -31,6 +31,7 @@ def load_methods():
     names = {
         "_media_retry_payload",
         "_media_retry_command",
+        "_delete_media_files",
         "_load_media_retry_cache",
         "_persist_media_retry_cache",
         "_remove_media_retry",
@@ -40,6 +41,7 @@ def load_methods():
     }
     methods = [node for node in channel.body if isinstance(node, ast.FunctionDef) and node.name in names]
     namespace = {
+        "MEDIA_DELETE_TYPES": {"image", "video", "file", "share"},
         "MEDIA_RETRY_TYPES": {"image", "video", "file", "share"},
         "MEDIA_RETRY_FIELDS": (
             "type", "message", "msgid", "svrid", "sender", "self", "wxid", "extrainfo", "thumb_path",
@@ -66,6 +68,7 @@ def load_methods():
 class Channel:
     def __init__(self, methods, cache_path=None):
         self.file_msg = {}
+        self.delete_media_after_send = False
         self.direct_transfer = False
         self.time_out = 10
         self.wxid = "wxid_self"
@@ -85,6 +88,7 @@ class Channel:
         self._voice_database_names = types.MethodType(methods["_voice_database_names"], self)
         self._media_retry_payload = types.MethodType(methods["_media_retry_payload"], self)
         self._media_retry_command = staticmethod(methods["_media_retry_command"])
+        self._delete_media_files = types.MethodType(methods["_delete_media_files"], self)
         self._load_media_retry_cache = types.MethodType(methods["_load_media_retry_cache"], self)
         self._persist_media_retry_cache = types.MethodType(methods["_persist_media_retry_cache"], self)
         self._remove_media_retry = types.MethodType(methods["_remove_media_retry"], self)
@@ -140,6 +144,7 @@ class TestMediaRetry(unittest.TestCase):
 
     def test_retry_checks_disk_and_reuploads_existing_file(self):
         channel = self.make_channel()
+        channel.delete_media_after_send = True
         chat, author = self.context()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = str(Path(tmpdir) / "video.mp4")
@@ -156,7 +161,7 @@ class TestMediaRetry(unittest.TestCase):
 
             self.assertEqual(result, "媒体重试发送成功")
             self.assertEqual(len(channel.sent), 1)
-            self.assertTrue(Path(path).exists())
+            self.assertFalse(Path(path).exists())
             self.assertNotIn(retry_id, channel.media_retry_cache)
 
     def test_file_timeout_has_retry_command_and_can_retry_existing_attachment(self):
@@ -204,13 +209,14 @@ class TestMediaRetry(unittest.TestCase):
             reloaded.media_retry_cache_path = Path(cache_path)
             reloaded.media_retry_cache.clear()
             reloaded._load_media_retry_cache()
+            reloaded.delete_media_after_send = True
             reloaded._build_media_retry_context = lambda _payload: (chat, author)
 
             result = reloaded.retry_media(retry_id)
 
             self.assertEqual(result, "媒体重试发送成功")
             self.assertEqual(len(reloaded.sent), 1)
-            self.assertTrue(Path(path).exists())
+            self.assertFalse(Path(path).exists())
 
     def test_retry_does_not_upload_missing_file(self):
         channel = self.make_channel()
@@ -224,6 +230,62 @@ class TestMediaRetry(unittest.TestCase):
         result = channel.retry_media(retry_id)
         self.assertEqual(result, "媒体附件已不存在，无法重试")
         self.assertEqual(channel.sent, [])
+
+    def test_default_does_not_delete_attachment_after_pending_send(self):
+        channel = self.make_channel()
+        chat, author = self.context()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "video.mp4")
+            Path(path).write_bytes(b"video")
+            msg = {
+                "type": "video",
+                "filepath": path,
+                "timestamp": int(time.time()),
+                "msgid": 789,
+            }
+            channel.file_msg[path] = (msg, author, chat)
+
+            self.methods["_process_pending_file"](channel, path)
+
+            self.assertTrue(Path(path).exists())
+
+    def test_enabled_deletes_attachment_after_pending_send(self):
+        channel = self.make_channel()
+        channel.delete_media_after_send = True
+        chat, author = self.context()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "video.mp4")
+            Path(path).write_bytes(b"video")
+            msg = {
+                "type": "video",
+                "filepath": path,
+                "timestamp": int(time.time()),
+                "msgid": 790,
+            }
+            channel.file_msg[path] = (msg, author, chat)
+
+            self.methods["_process_pending_file"](channel, path)
+
+            self.assertFalse(Path(path).exists())
+
+    def test_enabled_deletes_file_after_pending_send(self):
+        channel = self.make_channel()
+        channel.delete_media_after_send = True
+        chat, author = self.context()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "document.pdf")
+            Path(path).write_bytes(b"pdf")
+            msg = {
+                "type": "file",
+                "filepath": path,
+                "timestamp": int(time.time()),
+                "msgid": 791,
+            }
+            channel.file_msg[path] = (msg, author, chat)
+
+            self.methods["_process_pending_file"](channel, path)
+
+            self.assertFalse(Path(path).exists())
 
 if __name__ == "__main__":
     unittest.main()

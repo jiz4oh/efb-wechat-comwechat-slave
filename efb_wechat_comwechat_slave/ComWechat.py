@@ -47,6 +47,7 @@ from PIL import Image
 from typing import Callable
 
 VOICE_DATABASE_NAMES = ("MediaMSG0.db", "MediaMSG1.db", "MediaMSG2.db")
+MEDIA_DELETE_TYPES = {"image", "video", "file", "share"}
 MEDIA_RETRY_TYPES = {"image", "video", "file", "share"}
 MEDIA_RETRY_FIELDS = (
     "type",
@@ -68,6 +69,7 @@ class ComWeChatChannel(SlaveChannel):
 
     bot : WeChatRobot = None
     config : Dict = {}
+    delete_media_after_send: bool = True
     friends : EFBPrivateChat = []
     groups : EFBGroupChat    = []
 
@@ -97,6 +99,7 @@ class ComWeChatChannel(SlaveChannel):
         config_path = Path(efb_utils.get_config_path(self.channel_id))
         self.config = load_config(config_path)
         self.direct_transfer = "direct_transfer" in self.config
+        self.delete_media_after_send = self.config.get("delete_media_after_send", True) is True
         cache_path = Path(self.config.get("media_retry_cache_path", "media_retry_cache.json"))
         self.media_retry_cache_path = cache_path if cache_path.is_absolute() else config_path.parent / cache_path
         self.media_retry_cache_lock = threading.RLock()
@@ -640,6 +643,12 @@ class ComWeChatChannel(SlaveChannel):
                 chat=chat,
                 uid=MessageID(str(msg['msgid']))
             )
+            if getattr(self, "delete_media_after_send", False) and msg.get("type") in MEDIA_DELETE_TYPES:
+                resolved_path = (
+                    resolve_hooked_wechat_image_path(msg.get("filepath"))
+                    if msg.get("type") == "image" else None
+                )
+                self._delete_media_files(msg.get("filepath"), resolved_path)
         except Exception:
             if msg.get("type") not in MEDIA_RETRY_TYPES:
                 raise
@@ -752,6 +761,13 @@ class ComWeChatChannel(SlaveChannel):
             chat=chat,
             uid=MessageID(str(uid or msg.get("msgid"))),
         )
+
+    def _delete_media_files(self, *paths):
+        for path in {path for path in paths if path and os.path.isfile(path)}:
+            try:
+                os.remove(path)
+            except OSError:
+                self.logger.warning("Failed to delete media attachment: %s", path, exc_info=True)
 
     def _load_media_retry_cache(self):
         try:
@@ -900,6 +916,8 @@ class ComWeChatChannel(SlaveChannel):
                 self.logger.exception("Failed to send media retry failure message")
             return "媒体重试失败，请稍后再试"
 
+        if self.delete_media_after_send and media_type in MEDIA_DELETE_TYPES:
+            self._delete_media_files(path, retry_path)
         self._remove_media_retry(retry_id)
         return "媒体重试发送成功"
 
@@ -1014,6 +1032,8 @@ class ComWeChatChannel(SlaveChannel):
                 uid=MessageID(str(output_msg['msgid'])),
             )
             self.file_msg.pop(path, None)
+            if retry_payload is None and getattr(self, "delete_media_after_send", False) and media_type in MEDIA_DELETE_TYPES:
+                self._delete_media_files(path, output_msg.get("filepath"))
 
     def handle_file_msg(self):
         while True:
