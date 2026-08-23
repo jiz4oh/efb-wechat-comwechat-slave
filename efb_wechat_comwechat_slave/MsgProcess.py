@@ -65,6 +65,10 @@ def MsgProcess(msg : dict , chat, direct_transfer: bool = False) -> Union[Messag
             return efb_file_wrapper(file, os.path.basename(msg["filepath"]))
         return efb_share_link_wrapper(msg, chat)  # may return msgs in a list
 
+    elif msg["type"] == "file":
+        file = load_local_file_for_transfer(msg["filepath"], direct_transfer)
+        return efb_file_wrapper(file, os.path.basename(msg["filepath"]))
+
     elif msg["type"] == "voice":
         file = convert_silk_to_mp3(load_local_file_for_transfer(msg["filepath"], direct_transfer))
         return efb_voice_wrapper(file , file.name + ".ogg")
