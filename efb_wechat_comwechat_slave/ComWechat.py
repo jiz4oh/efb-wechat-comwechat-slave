@@ -12,6 +12,7 @@ from xml.sax.saxutils import escape
 
 import re
 import json
+import secrets
 from ehforwarderbot.chat import SystemChat, PrivateChat , SystemChatMember, ChatMember, SelfChatMember
 import hashlib
 from typing import Tuple, Optional, Collection, BinaryIO, Dict, Any , Union , List
@@ -46,6 +47,18 @@ from PIL import Image
 from typing import Callable
 
 VOICE_DATABASE_NAMES = ("MediaMSG0.db", "MediaMSG1.db", "MediaMSG2.db")
+MEDIA_RETRY_TYPES = {"image", "video", "file", "share"}
+MEDIA_RETRY_FIELDS = (
+    "type",
+    "message",
+    "msgid",
+    "svrid",
+    "sender",
+    "self",
+    "wxid",
+    "extrainfo",
+    "thumb_path",
+)
 
 class ComWeChatChannel(SlaveChannel):
     channel_name : str = "ComWechatChannel"
@@ -55,7 +68,6 @@ class ComWeChatChannel(SlaveChannel):
 
     bot : WeChatRobot = None
     config : Dict = {}
-
     friends : EFBPrivateChat = []
     groups : EFBGroupChat    = []
 
@@ -82,8 +94,14 @@ class ComWeChatChannel(SlaveChannel):
         super().__init__(instance_id=instance_id)
         self.logger.info("ComWeChat Slave Channel initialized.")
         self.logger.info("Version: %s" % self.__version__)
-        self.config = load_config(efb_utils.get_config_path(self.channel_id))
+        config_path = Path(efb_utils.get_config_path(self.channel_id))
+        self.config = load_config(config_path)
         self.direct_transfer = "direct_transfer" in self.config
+        cache_path = Path(self.config.get("media_retry_cache_path", "media_retry_cache.json"))
+        self.media_retry_cache_path = cache_path if cache_path.is_absolute() else config_path.parent / cache_path
+        self.media_retry_cache_lock = threading.RLock()
+        self.media_retry_cache = TTLCache(maxsize=200, ttl=max(self.time_out, 1))
+        self._load_media_retry_cache()
         self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
@@ -614,12 +632,25 @@ class ComWeChatChannel(SlaveChannel):
             self.file_msg[msg["filepath"]] = ( msg , author , chat )
             return
 
-        self.send_efb_msgs(
-            MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
-            author=author,
-            chat=chat,
-            uid=MessageID(str(msg['msgid']))
-        )
+        try:
+            processed = MsgProcess(msg, chat, self.direct_transfer)
+            self.send_efb_msgs(
+                MsgWrapper(msg, processed),
+                author=author,
+                chat=chat,
+                uid=MessageID(str(msg['msgid']))
+            )
+        except Exception:
+            if msg.get("type") not in MEDIA_RETRY_TYPES:
+                raise
+            self.logger.exception(
+                "Failed to process media: type=%s msgid=%s filepath=%s",
+                msg.get("type"), msg.get("msgid"), msg.get("filepath"),
+            )
+            try:
+                self._send_media_failure(msg.get("filepath"), msg, author, chat)
+            except Exception:
+                self.logger.exception("Failed to send media failure message")
 
     def _voice_database_names(self, refresh=False):
         cached = getattr(self, "_voice_db_names", None)
@@ -656,9 +687,228 @@ class ComWeChatChannel(SlaveChannel):
             names = list(VOICE_DATABASE_NAMES)
         return sorted(set(names), key=lambda name: (len(name), name))
 
+    def _media_retry_payload(self, path, msg, author, chat):
+        retry_msg = {
+            key: msg[key]
+            for key in MEDIA_RETRY_FIELDS
+            if key in msg
+        }
+        retry_msg["type"] = msg.get("type")
+        retry_msg["filepath"] = path
+        author_uid = getattr(author, "uid", None)
+        retry_payload = {
+            "path": path,
+            "type": msg.get("type"),
+            "msg": retry_msg,
+            "chat": {
+                "uid": getattr(chat, "uid", None),
+                "name": getattr(chat, "name", None),
+            },
+            "author": {
+                "uid": author_uid,
+                "name": getattr(author, "name", None),
+                "alias": getattr(author, "alias", None),
+                "is_self": bool(
+                    (msg.get("self") and author_uid == msg.get("self"))
+                    or (self.wxid and author_uid == self.wxid)
+                ),
+            },
+        }
+        retry_payload["expires_at"] = time.time() + max(self.time_out, 1)
+        retry_id = secrets.token_hex(8)
+        with self.media_retry_cache_lock:
+            self.media_retry_cache[retry_id] = retry_payload
+            self._persist_media_retry_cache()
+        return retry_id
+
+    @staticmethod
+    def _media_retry_command(retry_id):
+        return MessageCommand(
+            name="Retry",
+            callable_name="retry_media",
+            kwargs={"retry_id": retry_id},
+        )
+
+    def _send_media_failure(self, path, msg, author, chat, text=None, uid=None):
+        media_type = msg.get("type")
+        if media_type not in MEDIA_RETRY_TYPES or not path:
+            return
+
+        retry_payload = self._media_retry_payload(path, msg, author, chat)
+        failed_msg = dict(msg)
+        failed_msg["type"] = "text"
+        failed_msg["filepath"] = path
+        failed_msg["message"] = text or f"[{media_type} 下载失败,请在手机端查看]"
+        message = MsgProcess(failed_msg, chat, self.direct_transfer)
+        commands = MessageCommands([self._media_retry_command(retry_payload)])
+        if isinstance(message, list):
+            for item in message:
+                item.commands = commands
+        else:
+            message.commands = commands
+        self.send_efb_msgs(
+            MsgWrapper(failed_msg, message),
+            author=author,
+            chat=chat,
+            uid=MessageID(str(uid or msg.get("msgid"))),
+        )
+
+    def _load_media_retry_cache(self):
+        try:
+            with self.media_retry_cache_path.open(encoding="utf-8") as file:
+                persisted = json.load(file)
+        except FileNotFoundError:
+            return
+        except (OSError, TypeError, ValueError):
+            self.logger.warning("Failed to load media retry cache: %s", self.media_retry_cache_path, exc_info=True)
+            return
+
+        if not isinstance(persisted, dict):
+            self.logger.warning("Ignoring invalid media retry cache: %s", self.media_retry_cache_path)
+            return
+
+        now = time.time()
+        valid = {
+            retry_id: payload
+            for retry_id, payload in persisted.items()
+            if isinstance(retry_id, str)
+            and isinstance(payload, dict)
+            and isinstance(payload.get("expires_at"), (int, float))
+            and payload["expires_at"] > now
+        }
+        with self.media_retry_cache_lock:
+            self.media_retry_cache.update(valid)
+            if len(valid) != len(persisted):
+                self._persist_media_retry_cache()
+
+    def _persist_media_retry_cache(self):
+        cache_path = self.media_retry_cache_path
+        temporary_path = None
+        try:
+            with self.media_retry_cache_lock:
+                persisted = dict(self.media_retry_cache)
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=cache_path.parent,
+                    prefix=f".{cache_path.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as file:
+                    temporary_path = file.name
+                    json.dump(persisted, file, ensure_ascii=False)
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.replace(temporary_path, cache_path)
+        except (OSError, TypeError, ValueError):
+            self.logger.warning("Failed to persist media retry cache: %s", cache_path, exc_info=True)
+            if temporary_path:
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    pass
+
+    def _remove_media_retry(self, retry_id):
+        with self.media_retry_cache_lock:
+            self.media_retry_cache.pop(retry_id, None)
+            self._persist_media_retry_cache()
+
+    def _build_media_retry_context(self, payload):
+        chat_info = payload.get("chat") or {}
+        author_info = payload.get("author") or {}
+        chat_uid = chat_info.get("uid")
+        chat_name = chat_info.get("name") or chat_uid
+        author_uid = author_info.get("uid")
+
+        if not chat_uid:
+            raise EFBMessageError("重试失败，缺少聊天信息")
+
+        if "@chatroom" in chat_uid:
+            chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
+                uid=chat_uid,
+                name=chat_name,
+            ))
+            if author_info.get("is_self"):
+                author = chat.self
+            else:
+                author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
+                    uid=author_uid,
+                    name=author_info.get("name") or author_uid,
+                    alias=author_info.get("alias"),
+                ))
+        else:
+            chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
+                uid=chat_uid,
+                name=chat_name,
+            ))
+            author = chat.self if author_info.get("is_self") else chat.other
+        return chat, author
+
+    def retry_media(self, retry_id):
+        if not isinstance(retry_id, str):
+            return "重试上下文已失效，请重新接收媒体"
+        with self.media_retry_cache_lock:
+            media = self.media_retry_cache.get(retry_id)
+        if not isinstance(media, dict):
+            return "重试上下文已失效，请重新接收媒体"
+        if media.get("expires_at", 0) <= time.time():
+            self._remove_media_retry(retry_id)
+            return "重试上下文已失效，请重新接收媒体"
+
+        path = media.get("path")
+        media_type = media.get("type")
+        if media_type not in MEDIA_RETRY_TYPES or not path:
+            return "不支持重试此媒体"
+
+        retry_path = path
+        if media_type == "image":
+            retry_path = resolve_hooked_wechat_image_path(path) or path
+        if not os.path.isfile(retry_path):
+            return "媒体附件已不存在，无法重试"
+
+        msg = dict(media.get("msg") or {})
+        msg["type"] = media_type
+        msg["filepath"] = retry_path
+        chat = author = None
+        try:
+            chat, author = self._build_media_retry_context(media)
+            processed = MsgProcess(msg, chat, self.direct_transfer)
+            self.send_efb_msgs(
+                MsgWrapper(msg, processed),
+                author=author,
+                chat=chat,
+                uid=MessageID(f"{msg.get('msgid', int(time.time()))}-retry-{time.time_ns()}"),
+            )
+        except Exception:
+            self.logger.exception(
+                "Failed to retry media: type=%s msgid=%s filepath=%s",
+                media_type, msg.get("msgid"), retry_path,
+            )
+            try:
+                if chat is None or author is None:
+                    raise EFBMessageError("重试失败，缺少聊天信息")
+                self._send_media_failure(
+                    path,
+                    msg,
+                    author,
+                    chat,
+                    text=f"[{media_type} 重试失败,请在手机端查看]",
+                    uid=f"{msg.get('msgid', int(time.time()))}-retry-failed-{time.time_ns()}",
+                )
+            except Exception:
+                self.logger.exception("Failed to send media retry failure message")
+            return "媒体重试失败，请稍后再试"
+
+        self._remove_media_retry(retry_id)
+        return "媒体重试发送成功"
+
     def _process_pending_file(self, path):
         flag = False
         msg, author, chat = self.file_msg[path]
+        media_type = msg.get("type")
+        retry_payload = None
+        output_msg = msg
         resolved_path = resolve_hooked_wechat_image_path(path) if msg["type"] == "image" else None
         if resolved_path:
             msg["filepath"] = resolved_path
@@ -666,9 +916,10 @@ class ComWeChatChannel(SlaveChannel):
         elif os.path.isfile(path):
             flag = True
         elif (int(time.time()) - msg["timestamp"]) > self.time_out:
-            msg_type = msg["type"]
-            msg['message'] = f"[{msg_type} 下载超时,请在手机端查看]"
-            msg["type"] = "text"
+            retry_payload = self._media_retry_payload(path, msg, author, chat) if media_type in MEDIA_RETRY_TYPES else None
+            output_msg = dict(msg)
+            output_msg['message'] = f"[{media_type} 下载超时,请在手机端查看]"
+            output_msg["type"] = "text"
             flag = True
         elif msg["type"] == "voice":
             sql = f'SELECT Buf FROM Media WHERE Reserved0 = {msg["msgid"]}'
@@ -748,13 +999,21 @@ class ComWeChatChannel(SlaveChannel):
                 break
 
         if flag:
-            del self.file_msg[path]
+            processed = MsgProcess(output_msg, chat, self.direct_transfer)
+            if retry_payload:
+                commands = MessageCommands([self._media_retry_command(retry_payload)])
+                if isinstance(processed, list):
+                    for item in processed:
+                        item.commands = commands
+                else:
+                    processed.commands = commands
             self.send_efb_msgs(
-                MsgWrapper(msg, MsgProcess(msg, chat, self.direct_transfer)),
+                MsgWrapper(output_msg, processed),
                 author=author,
                 chat=chat,
-                uid=MessageID(str(msg['msgid'])),
+                uid=MessageID(str(output_msg['msgid'])),
             )
+            self.file_msg.pop(path, None)
 
     def handle_file_msg(self):
         while True:
@@ -767,7 +1026,14 @@ class ComWeChatChannel(SlaveChannel):
                         msg = self.file_msg[path][0]
                         self._process_pending_file(path)
                     except Exception:
-                        self.file_msg.pop(path, None)
+                        pending = self.file_msg.pop(path, None)
+                        if pending:
+                            failed_msg, author, chat = pending
+                            if failed_msg.get("type") in MEDIA_RETRY_TYPES:
+                                try:
+                                    self._send_media_failure(path, failed_msg, author, chat)
+                                except Exception:
+                                    self.logger.exception("Failed to send media failure message")
                         self.logger.exception(
                             "Failed to process pending media: type=%s msgid=%s filepath=%s",
                             msg.get("type"), msg.get("msgid"), msg.get("filepath", path),
