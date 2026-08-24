@@ -105,6 +105,13 @@ class ComWeChatChannel(SlaveChannel):
         self.media_retry_cache_lock = threading.RLock()
         self.media_retry_cache = TTLCache(maxsize=200, ttl=max(self.time_out, 1))
         self._load_media_retry_cache()
+        self.mark_as_read_enabled = self.config.get("auto_mark_as_read", True) is True
+        try:
+            self.mark_as_read_delay = max(float(self.config.get("mark_as_read_delay", 10)), 0)
+        except (TypeError, ValueError):
+            self.mark_as_read_delay = 10
+        self.mark_as_read_timers: Dict[str, threading.Timer] = {}
+        self.mark_as_read_lock = threading.RLock()
         self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
@@ -612,6 +619,8 @@ class ComWeChatChannel(SlaveChannel):
             if self.cache[msg["msgid"]] == msg["type"]:
                 return
 
+        self._schedule_mark_as_read(msg, chat)
+
         try:
             if ("FileStorage" in msg["filepath"]) and ("Cache" not in msg["filepath"]):
                 msg["timestamp"] = int(time.time())
@@ -660,6 +669,72 @@ class ComWeChatChannel(SlaveChannel):
                 self._send_media_failure(msg.get("filepath"), msg, author, chat)
             except Exception:
                 self.logger.exception("Failed to send media failure message")
+
+    def _mark_as_read_response_ok(self, response: Dict[str, Any]) -> bool:
+        return (
+            isinstance(response, dict)
+            and response.get("result") == "OK"
+            and str(response.get("msg")) == "1"
+        )
+
+    def _mark_chat_as_read(self, chat_uid: ChatID, reason: str) -> None:
+        if not self.mark_as_read_enabled or not chat_uid:
+            return
+
+        chat_key = str(chat_uid)
+        with self.mark_as_read_lock:
+            timer = self.mark_as_read_timers.pop(chat_key, None)
+            if timer is not None and timer is not threading.current_thread():
+                timer.cancel()
+
+        try:
+            response = self.bot.MarkAsRead(wxid=chat_key)
+        except Exception:
+            self.logger.exception("Failed to mark chat as read: chat=%s reason=%s", chat_key, reason)
+            return
+
+        if not self._mark_as_read_response_ok(response):
+            self.logger.warning(
+                "Native mark-as-read failed: chat=%s reason=%s response=%s",
+                chat_key,
+                reason,
+                response,
+            )
+            return
+        self.logger.debug("Marked chat as read: chat=%s reason=%s", chat_key, reason)
+
+    def _schedule_mark_as_read(self, msg: Dict[str, Any], chat: 'Chat') -> None:
+        if not self.mark_as_read_enabled:
+            return
+        if msg.get("isSendMsg") in (1, True, "1"):
+            return
+        if msg.get("type") in {"sysmsg", "sysnotify", "eventnotify"}:
+            return
+
+        chat_uid = getattr(chat, "uid", None)
+        if not chat_uid:
+            return
+
+        chat_key = str(chat_uid)
+        with self.mark_as_read_lock:
+            timer = self.mark_as_read_timers.get(chat_key)
+            if timer is not None and timer.is_alive():
+                return
+
+            timer = threading.Timer(
+                self.mark_as_read_delay,
+                self._mark_chat_as_read,
+                args=(chat_key, "inbound"),
+            )
+            timer.daemon = True
+            self.mark_as_read_timers[chat_key] = timer
+            timer.start()
+        self.logger.debug(
+            "Scheduled mark-as-read: chat=%s delay=%ss msgid=%s",
+            chat_key,
+            self.mark_as_read_delay,
+            msg.get("msgid"),
+        )
 
     def _voice_database_names(self, refresh=False):
         cached = getattr(self, "_voice_db_names", None)
@@ -1148,6 +1223,8 @@ class ComWeChatChannel(SlaveChannel):
                 self.system_msg(content)
                 return msg
 
+        self._mark_chat_as_read(chat_uid, "outbound")
+
         if msg.text:
             match = re.search(self.forward_pattern, msg.text)
             if match:
@@ -1482,6 +1559,11 @@ class ComWeChatChannel(SlaveChannel):
         ...
 
     def stop_polling(self):
+        with self.mark_as_read_lock:
+            timers = list(self.mark_as_read_timers.values())
+            self.mark_as_read_timers.clear()
+        for timer in timers:
+            timer.cancel()
         self.db.stop_worker()
 
     def get_message_by_id(self, chat: 'Chat', msg_id: MessageID) -> Optional['Message']:
