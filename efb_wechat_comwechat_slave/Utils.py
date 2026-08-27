@@ -201,7 +201,7 @@ def dump_message_ids(ids: list[MessageID]) -> MessageID:
     return MessageID(",".join(ids))
 
 def load_message_ids(id: MessageID) -> list[MessageID]:
-    return id.split(',')
+    return [MessageID(item) for item in str(id).split(",") if item]
 
 WC_EMOTICON_CONVERSION = {
     '[微笑]': '😃', '[Smile]': '😃',

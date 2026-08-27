@@ -28,14 +28,22 @@ from . import __version__ as version
 from ehforwarderbot.channel import SlaveChannel
 from ehforwarderbot.types import MessageID, ChatID, InstanceID
 from ehforwarderbot import utils as efb_utils
-from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError
+from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError, EFBOperationNotSupported
 from ehforwarderbot.message import MessageCommand, MessageCommands
 from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgProcess import MsgProcess, MsgWrapper
-from .Utils import download_file , load_config , load_temp_file_to_local , resolve_hooked_wechat_image_path, WC_EMOTICON_CONVERSION, dump_message_ids, load_message_ids
+from .Utils import (
+    download_file,
+    load_config,
+    load_temp_file_to_local,
+    resolve_hooked_wechat_image_path,
+    WC_EMOTICON_CONVERSION,
+    dump_message_ids,
+    load_message_ids,
+)
 from .db import DatabaseManager
 from .Constant import QUOTE_MESSAGE
 from .dbkey import DbKeyManager
@@ -118,6 +126,7 @@ class ComWeChatChannel(SlaveChannel):
         self.sent_msgs: Dict[Any, threading.Event] = {}
         self.sent_msg_results: Dict[Any, MessageID] = {}
         self.pending_lock = threading.Lock()
+        self.revoke_message_ids = TTLCache(maxsize=200, ttl=max(self.time_out, 1))
         self._file_locks: Dict[ChatID, threading.Lock] = {}
         self._file_locks_lock = threading.Lock()
         self.send_timeout = self.config.get("send_timeout", 5)
@@ -152,7 +161,6 @@ class ComWeChatChannel(SlaveChannel):
             msgid = msg.get("msgid")
             message_content = msg.get("message")
             filepath = msg.get("filepath")
-            msg_type = msg.get("type")
 
             if not sender or not msgid:
                 self.logger.warning("on_sent_msg missing sender or msgid.")
@@ -303,7 +311,11 @@ class ComWeChatChannel(SlaveChannel):
                     name = name,
                 ))
 
-            newmsgid = re.search("<newmsgid>(.*?)<\/newmsgid>", msg["message"]).group(1)
+            newmsgid = MessageID(re.search("<newmsgid>(.*?)<\/newmsgid>", msg["message"]).group(1))
+
+            if self.revoke_message_ids.get(newmsgid):
+                self.logger.debug("Ignoring revoke feedback for server msgid %s", newmsgid)
+                return
 
             efb_msg = Message(chat = chat , uid = newmsgid)
             coordinator.send_status(
@@ -1539,9 +1551,50 @@ class ComWeChatChannel(SlaveChannel):
         t.start()
 
     def send_status(self, status: 'Status'):
-        #TODO 撤回消息
-        #self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
-        ...
+        if not isinstance(status, MessageRemoval):
+            raise EFBOperationNotSupported()
+
+        message = status.message
+        references = list(dict.fromkeys(load_message_ids(message.uid)))
+        chat_uid = str(message.chat.uid)
+        if not references:
+            raise EFBMessageError("撤回消息缺少有效的消息 ID")
+
+        failures = []
+        for server_msgid in references:
+            if not server_msgid.isdecimal():
+                raise EFBMessageError(f"无效的消息 ID: {server_msgid}")
+
+            self.revoke_message_ids[server_msgid] = True
+            try:
+                response = self.bot.RevokeMessage(
+                    wxid=chat_uid,
+                    msgid=server_msgid,
+                )
+            except Exception as exc:
+                self.revoke_message_ids.pop(server_msgid, None)
+                failures.append(str(exc))
+                continue
+
+            reason = self._revoke_failure_reason(response)
+            if reason is not None:
+                self.revoke_message_ids.pop(server_msgid, None)
+
+                failures.append(reason)
+
+        if failures:
+            reason = "; ".join(failures)
+            if len(failures) == len(references):
+                raise EFBMessageError(f"消息撤回失败：{reason}")
+            raise EFBMessageError(f"部分消息撤回失败：{reason}")
+
+    @staticmethod
+    def _revoke_failure_reason(response: Any) -> Optional[str]:
+        if isinstance(response, dict) and response.get("result") == "OK" and "msg" not in response:
+            return "上游不支持撤回消息"
+        if not isinstance(response, dict) or str(response.get("msg")) != "1":
+            return response.get("err_msg") if isinstance(response, dict) else response
+        return None
 
     def stop_polling(self):
         with self.mark_as_read_lock:
