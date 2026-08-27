@@ -73,8 +73,7 @@ class ComWeChatChannel(SlaveChannel):
     friends : EFBPrivateChat = []
     groups : EFBGroupChat    = []
 
-    contacts : Dict = {}            # {wxid : {alias : str , remark : str, nickname : str , type : int}} -> {wxid : name(after handle)}
-    nicknames : Dict = {}
+    contacts : Dict[str, Dict[str, str]] = {}  # {wxid: {nickname: str, remark: str}}
     group_members : Dict = {}       # {"group_id" : { "wxID" : "displayName"}}
 
     time_out : int = int(os.getenv("EFB_MEDIA_TIMEOUT", "300"))
@@ -258,17 +257,10 @@ class ComWeChatChannel(SlaveChannel):
                 self.groups.append(chat)
                 coordinator.send_status(ChatUpdates(channel=self, new_chats=[sender]))
 
-            try:
-                name = self.contacts[wxid]
-            except:
-                name = wxid
             self.extract_alias(msg)
+            member = self.get_group_member(sender, wxid)
 
-            author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
-                uid = wxid,
-                name = name,
-                alias = self.get_group_alias_by(sender, wxid)
-            ))
+            author = ChatMgr.build_efb_chat_as_member(chat, member)
             self.handle_msg(msg, author, chat)
 
             if msg["type"] == "sysmsg" and msg.get("message", None):
@@ -452,11 +444,10 @@ class ComWeChatChannel(SlaveChannel):
                 if sender == wxid:
                     author = chat.self
                 else:
-                    author = ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
-                        uid = wxid,
-                        name = name,
-                        alias = self.get_group_alias_by(sender, wxid)
-                    ))
+                    author = ChatMgr.build_efb_chat_as_member(
+                        chat,
+                        self.get_group_member(sender, wxid),
+                    )
             else:
                 chat = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                     uid = sender,
@@ -1254,13 +1245,7 @@ class ComWeChatChannel(SlaveChannel):
                 memberlist = self.bot.GetChatroomMemberList(chatroom_id = chat_uid)
                 message = '群组成员包括：'
                 for wxid in memberlist['members'].split('^G'):
-                    try:
-                        name = self.contacts[wxid]
-                    except:
-                        try:
-                            name = self.bot.GetChatroomMemberNickname(chatroom_id = chat_uid, wxid = wxid)['nickname'] or wxid
-                        except:
-                            name = wxid
+                    name = self.get_name_by_wxid(wxid)
                     message += '\n' + wxid + ' : ' + name
                 self.system_msg({'sender':chat_uid, 'message':message})
                 return msg
@@ -1300,7 +1285,7 @@ class ComWeChatChannel(SlaveChannel):
                 keyword = msg.text[8::]
                 message = 'result:'
                 for key, value in self.contacts.items():
-                    if keyword in value:
+                    if keyword in key or any(keyword in value[field] for field in ('nickname', 'remark')):
                         message += '\n' + str(key) + " : " + str(value)
                 self.system_msg({'sender':chat_uid, 'message':message})
                 return msg
@@ -1570,21 +1555,14 @@ class ComWeChatChannel(SlaveChannel):
         ...
 
     def get_name_by_wxid(self, wxid):
-        try:
-            name = self.contacts[wxid]
-            if name == "":
-                name = wxid
-        except:
-            data = self.get_contact_by_sql(wxid = wxid)
-            if data:
-                name = data[3]
-                if name == "":
-                    name = wxid
-                else:
-                    self.contacts[wxid] = name
-            else:
-                name = wxid
-        return name
+        contact = self.get_contact_by_wxid(wxid)
+        if not contact:
+            return wxid
+        nickname = contact["nickname"]
+        remark = contact["remark"]
+        if remark:
+            return f"{remark}({nickname})"
+        return nickname or wxid
 
     @staticmethod
     def non_blocking_lock_wrapper(lock: threading.Lock) :
@@ -1686,33 +1664,49 @@ class ComWeChatChannel(SlaveChannel):
             group_member = {}
             chatroom.ParseFromString(bytes(base64.b64decode(member_list[index][1])))
             for member in chatroom.members:
-                if member.displayName != "":
-                    group_member[member.wxID] = member.displayName
+                group_member[member.wxID] = member.displayName or ""
             group_data[member_list[index][0]] = group_member
         return group_data
 
     def get_group_alias_by(self, group_wxid, member_wxid):
-        alias = self.group_members.get(group_wxid,{}).get(member_wxid , None)
-        if alias == self.nicknames.get(member_wxid, None):
-            alias = None
-        return alias
+        return self.group_members.get(group_wxid, {}).get(member_wxid) or None
+
+    def get_contact_by_wxid(self, wxid):
+        contact = self.contacts.get(wxid)
+        if contact is not None:
+            return contact
+
+        data = self.get_contact_by_sql(wxid=wxid)
+        if not data:
+            return None
+
+        contact = {
+            "nickname": data[3] or "",
+            "remark": data[2] or "",
+        }
+        self.contacts[wxid] = contact
+        return contact
+
+    def is_friend(self, wxid):
+        contact = self.get_contact_by_wxid(wxid)
+        return bool(contact and contact.get("remark"))
+
+    def get_group_member(self, group_wxid, member_wxid):
+        contact = self.get_contact_by_wxid(member_wxid) or {}
+        group_alias = self.get_group_alias_by(group_wxid, member_wxid)
+        if self.is_friend(member_wxid):
+            name = contact.get("remark", "")
+        else:
+            name = contact.get("nickname") or member_wxid
+        return EFBGroupMember(
+            uid=member_wxid,
+            name=name,
+            alias=group_alias,
+        )
 
     def get_nickname_by_wxid(self, wxid):
-        try:
-            nickname = self.nicknames[wxid]
-            if nickname == "":
-                nickname = wxid
-        except:
-            data = self.get_contact_by_sql(wxid = wxid)
-            if data:
-                nickname = data[3]
-                if nickname == "":
-                    nickname = wxid
-                else:
-                    self.nicknames[wxid] = nickname
-            else:
-                nickname = wxid
-        return nickname
+        contact = self.get_contact_by_wxid(wxid)
+        return contact["nickname"] if contact and contact["nickname"] else wxid
 
     #定时更新 Start
     @non_blocking_lock_wrapper(contact_update_lock)
@@ -1722,11 +1716,12 @@ class ComWeChatChannel(SlaveChannel):
         contacts = self.get_contact_list_by_sql()
         for contact in contacts:
             data = contacts[contact]
-            name = (f"{data['remark']}({data['nickname']})") if data["remark"] else data["nickname"]
-
-            self.contacts[contact] = name
-            self.nicknames[contact] = data["nickname"]
-            if data["type"] == 0 or data["type"] == 4:
+            self.contacts[contact] = {
+                "nickname": data["nickname"] or "",
+                "remark": data["remark"] or "",
+            }
+            name = self.get_name_by_wxid(contact)
+            if str(data["type"]) in {"0", "4"}:
                 continue
 
             if "@chatroom" in contact:
@@ -1766,6 +1761,7 @@ class ComWeChatChannel(SlaveChannel):
     def merge_group_members(self, group, new_members):
         self.group_members[group] = self.group_members.get(group, {})
         for wxid, alias in new_members.items():
+            alias = alias or ""
             if self.group_members[group].get(wxid, None) != alias:
                 self.group_members[group][wxid] = alias
                 self.db.update_group_alias(group, wxid, alias)
@@ -1776,13 +1772,7 @@ class ComWeChatChannel(SlaveChannel):
             with contextlib.suppress(EFBChatNotFound):
                 chat = self.get_chat(group)
                 for wxid, alias in members.items():
-                    with contextlib.suppress(EFBChatNotFound):
-                        contact = self.get_chat(wxid)
-                        ChatMgr.build_efb_chat_as_member(chat, EFBGroupMember(
-                            uid = wxid,
-                            name = contact.name,
-                            alias = alias
-                        ))
+                    ChatMgr.build_efb_chat_as_member(chat, self.get_group_member(group, wxid))
             self.merge_group_members(group, members)
 
     def extract_alias(self, msg):

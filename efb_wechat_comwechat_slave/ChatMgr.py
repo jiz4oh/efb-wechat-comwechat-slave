@@ -70,7 +70,7 @@ class ChatMgr:
         else:
             if name is not None:
                 m.name = name
-            if alias is not None:
+            if alias is not None and name != alias:
                 m.alias = alias
         return m
 
