@@ -45,7 +45,6 @@ from .Utils import (
     load_message_ids,
 )
 from .db import DatabaseManager
-from .Constant import QUOTE_MESSAGE
 from .dbkey import DbKeyManager
 
 from rich.console import Console
@@ -176,6 +175,18 @@ class ComWeChatChannel(SlaveChannel):
                     potential_key_text = (sender, message_content)
                     if potential_key_text in self.sent_msgs:
                         key = potential_key_text
+                    if key is None:
+                        try:
+                            quote = etree.fromstring(message_content.encode())
+                            potential_key_quote = (
+                                sender,
+                                quote.findtext(".//appmsg/title"),
+                                quote.findtext(".//refermsg/svrid"),
+                            )
+                            if potential_key_quote in self.sent_msgs:
+                                key = potential_key_quote
+                        except (TypeError, ValueError, etree.XMLSyntaxError):
+                            pass
 
                 if filepath:
                     potential_key_file = (sender, None, self.file_lock_key)
@@ -1430,48 +1441,12 @@ class ComWeChatChannel(SlaveChannel):
 
         if isinstance(msg.target, Message) and text_to_send:
             msgid = load_message_ids(msg.target.uid)[0]
-            if isinstance(msg.target.author, SelfChatMember):
-                displayname = self.me["wxNickName"]
-                sender = self.wxid
-            else:
-                sender = msg.target.author.uid
-                displayname = self.group_members.get(wxid, {}).get(sender, msg.target.author.name)
-            content = escape(
-                msg.target.vendor_specific.get("comwechat_info", {}).get("message", ""),
-                {
-                    "\n": "&#x0A;",
-                    "\t": "&#x09;",
-                    '"': "&quot;",
-                },
-            ) or msg.target.text
-            comwechat_info = msg.target.vendor_specific.get("comwechat_info", {})
-            if comwechat_info.get("type", None) == "animatedsticker":
-                refer_type = 47
-            elif msg.target.type == MsgType.Image:
-                refer_type = 3
-            elif msg.target.type == MsgType.Voice:
-                refer_type = 34
-            elif msg.target.type == MsgType.Video:
-                refer_type = 43
-            elif msg.target.type == MsgType.Sticker:
-                refer_type = 47
-            elif msg.target.type == MsgType.Location:
-                refer_type = 48
-            elif msg.target.type == MsgType.File:
-                refer_type = 49
-            elif comwechat_info.get("type", None) == "share":
-                refer_type = 49
-            else:
-                refer_type = 1
-            if content:
-                content = "<content>%s</content>" % content
-            else:
-                content = "<content />"
-            xml = QUOTE_MESSAGE % (self.wxid, text_to_send, refer_type, msgid, sender, sender, displayname, content)
-            key = (wxid, xml)
+            if not msgid.isdecimal():
+                raise EFBMessageError("引用消息缺少有效的服务器消息 ID")
+            key = (wxid, text_to_send, msgid)
             with self.pending_lock:
                 self.sent_msgs[key] = threading.Event()
-            self.bot.SendXml(wxid=wxid, xml=xml, img_path="")
+            self.bot.SendQuoteText(wxid=wxid, msg=text_to_send, target_msgid=msgid)
         else:
             key = (wxid, text_to_send)
             with self.pending_lock:
