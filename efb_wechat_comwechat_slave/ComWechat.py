@@ -13,7 +13,7 @@ from xml.sax.saxutils import escape
 import re
 import json
 import secrets
-from ehforwarderbot.chat import SystemChat, PrivateChat , SystemChatMember, ChatMember, SelfChatMember
+from ehforwarderbot.chat import GroupChat, SystemChat, PrivateChat , SystemChatMember, ChatMember, SelfChatMember
 import hashlib
 from typing import Tuple, Optional, Collection, BinaryIO, Dict, Any , Union , List
 from datetime import datetime
@@ -1587,7 +1587,50 @@ class ComWeChatChannel(SlaveChannel):
         self.db.stop_worker()
 
     def get_message_by_id(self, chat: 'Chat', msg_id: MessageID) -> Optional['Message']:
-        ...
+        get_chat_msg = getattr(self.bot, "GetChatMsgBySvrId", None)
+        if not callable(get_chat_msg):
+            return None
+
+        try:
+            response = get_chat_msg(msgid=str(msg_id))
+        except Exception:
+            self.logger.debug("Failed to retrieve message by server ID: %s", msg_id, exc_info=True)
+            return None
+
+        data = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
+        if not isinstance(data, dict) or str(data.get("msgid")) != str(msg_id):
+            return None
+        if str(data.get("sender")) != str(chat.uid):
+            self.logger.warning(
+                "Message server ID belongs to another chat: requested=%s actual=%s msgid=%s",
+                chat.uid,
+                data.get("sender"),
+                msg_id,
+            )
+            return None
+
+        try:
+            processed = MsgProcess(data, chat, self.direct_transfer)
+        except Exception:
+            self.logger.debug("Failed to convert native message: %s", msg_id, exc_info=True)
+            return None
+
+        if isinstance(processed, list):
+            processed = next((item for item in processed if isinstance(item, Message)), None)
+        if not isinstance(processed, Message):
+            return None
+
+        processed.chat = chat
+        processed.uid = MessageID(str(msg_id))
+        if isinstance(chat, GroupChat):
+            processed.author = chat.self if data.get("isSendMsg") else ChatMgr.build_efb_chat_as_member(
+                chat,
+                self.get_group_member(chat.uid, data.get("wxid") or data["sender"]),
+            )
+        else:
+            processed.author = chat.self if data.get("isSendMsg") else chat.other
+        MsgWrapper(data, processed)
+        return processed
 
     def get_name_by_wxid(self, wxid):
         contact = self.get_contact_by_wxid(wxid)
