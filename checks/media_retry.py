@@ -50,7 +50,6 @@ def load_methods():
         "MessageCommands": list,
         "MessageID": str,
         "MsgProcess": lambda msg, _chat, _direct: FakeMessage(),
-        "MsgWrapper": lambda _msg, processed: processed,
         "resolve_hooked_wechat_image_path": lambda _path: None,
         "EFBMessageError": RuntimeError,
         "json": json,

@@ -35,7 +35,7 @@ from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text
-from .MsgProcess import MsgProcess, MsgWrapper
+from .MsgProcess import MsgProcess
 from .Utils import (
     download_file,
     load_config,
@@ -488,7 +488,7 @@ class ComWeChatChannel(SlaveChannel):
                 type=MsgType.Text,
                 text=text
             )
-            self.send_efb_msgs(MsgWrapper(msg, m), author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
+            self.send_efb_msgs(m, author=author, chat=chat, uid=MessageID(str(msg['msgid'])))
 
     def is_login(self) -> bool:
         try:
@@ -662,7 +662,7 @@ class ComWeChatChannel(SlaveChannel):
         try:
             processed = MsgProcess(msg, chat, self.direct_transfer)
             self.send_efb_msgs(
-                MsgWrapper(msg, processed),
+                processed,
                 author=author,
                 chat=chat,
                 uid=MessageID(str(msg['msgid']))
@@ -846,7 +846,7 @@ class ComWeChatChannel(SlaveChannel):
         else:
             message.commands = commands
         self.send_efb_msgs(
-            MsgWrapper(failed_msg, message),
+            message,
             author=author,
             chat=chat,
             uid=MessageID(str(uid or msg.get("msgid"))),
@@ -981,7 +981,7 @@ class ComWeChatChannel(SlaveChannel):
             chat, author = self._build_media_retry_context(media)
             processed = MsgProcess(msg, chat, self.direct_transfer)
             self.send_efb_msgs(
-                MsgWrapper(msg, processed),
+                processed,
                 author=author,
                 chat=chat,
                 uid=MessageID(f"{msg.get('msgid', int(time.time()))}-retry-{time.time_ns()}"),
@@ -1116,7 +1116,7 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     processed.commands = commands
             self.send_efb_msgs(
-                MsgWrapper(output_msg, processed),
+                processed,
                 author=author,
                 chat=chat,
                 uid=MessageID(str(output_msg['msgid'])),
@@ -1629,7 +1629,6 @@ class ComWeChatChannel(SlaveChannel):
             )
         else:
             processed.author = chat.self if data.get("isSendMsg") else chat.other
-        MsgWrapper(data, processed)
         return processed
 
     def get_name_by_wxid(self, wxid):

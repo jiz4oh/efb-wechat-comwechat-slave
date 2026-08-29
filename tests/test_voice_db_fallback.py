@@ -35,8 +35,8 @@ def load_process_pending_file():
         "time": time,
         "resolve_hooked_wechat_image_path": lambda _path: None,
         "MsgProcess": lambda msg, _chat, _direct_transfer: msg,
-        "MsgWrapper": lambda _msg, processed: processed,
         "MessageID": str,
+        "MEDIA_DELETE_TYPES": {"image", "video", "file", "share"},
         "VOICE_DATABASE_NAMES": ("MediaMSG0.db", "MediaMSG1.db", "MediaMSG2.db"),
     }
     module = ast.Module(body=[voice_database_names, function], type_ignores=[])

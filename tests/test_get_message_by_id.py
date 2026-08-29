@@ -58,7 +58,7 @@ class GetMessageByIdTest(unittest.TestCase):
         self.assertEqual(message.uid, "123")
         self.assertEqual(message.text, "converted")
         self.assertIs(message.author, chat.other)
-        self.assertEqual(message.vendor_specific["comwechat_info"]["xml"], "<msg><appmsg><type>57</type></appmsg></msg>")
+        self.assertNotIn("comwechat_info", message.vendor_specific)
 
     def test_returns_none_when_message_belongs_to_another_chat(self):
         channel = self.make_channel({"result": "OK", "data": {"msgid": "123", "sender": "wxid_other"}})

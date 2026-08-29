@@ -90,7 +90,6 @@ class SelfImageQuoteTest(unittest.TestCase):
         target.uid = "123456"
         target.type = MsgType.Image
         target.text = ""
-        target.vendor_specific = {"comwechat_info": {}}
 
         message = Message()
         message.target = target
@@ -109,7 +108,6 @@ class SelfImageQuoteTest(unittest.TestCase):
         target.uid = ""
         target.type = MsgType.Image
         target.text = "原消息"
-        target.vendor_specific = {"comwechat_info": {}}
 
         message = Message()
         message.target = target
@@ -131,7 +129,6 @@ class SelfImageQuoteTest(unittest.TestCase):
         target.uid = "123456"
         target.type = MsgType.Image
         target.text = "原消息"
-        target.vendor_specific = {"comwechat_info": {}}
 
         message = Message()
         message.target = target
