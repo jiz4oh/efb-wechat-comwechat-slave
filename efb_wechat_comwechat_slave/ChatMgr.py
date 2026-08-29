@@ -70,8 +70,10 @@ class ChatMgr:
         else:
             if name is not None:
                 m.name = name
-            if alias is not None and name != alias:
+            if alias is not None:
                 m.alias = alias
+        if m.alias == m.name:
+            m.alias = None
         return m
 
     @staticmethod
