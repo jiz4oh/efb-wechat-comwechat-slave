@@ -34,6 +34,7 @@ from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 
 from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
+from .MsgDeco import qutoed_text
 from .MsgProcess import MsgProcess, MsgWrapper
 from .Utils import (
     download_file,
@@ -1440,13 +1441,19 @@ class ComWeChatChannel(SlaveChannel):
         text_to_send = msg.text
 
         if isinstance(msg.target, Message) and text_to_send:
-            msgid = load_message_ids(msg.target.uid)[0]
-            if not msgid.isdecimal():
-                raise EFBMessageError("引用消息缺少有效的服务器消息 ID")
-            key = (wxid, text_to_send, msgid)
-            with self.pending_lock:
-                self.sent_msgs[key] = threading.Event()
-            self.bot.SendQuoteText(wxid=wxid, msg=text_to_send, target_msgid=msgid)
+            msgid = next((item for item in load_message_ids(msg.target.uid) if item.isdecimal()), None)
+            send_quote_text = getattr(self.bot, "SendQuoteText", None)
+            if msgid and callable(send_quote_text):
+                key = (wxid, text_to_send, msgid)
+                with self.pending_lock:
+                    self.sent_msgs[key] = threading.Event()
+                send_quote_text(wxid=wxid, msg=text_to_send, target_msgid=msgid)
+            else:
+                text_to_send = qutoed_text(msg.target.text, text_to_send)
+                key = (wxid, text_to_send)
+                with self.pending_lock:
+                    self.sent_msgs[key] = threading.Event()
+                self.bot.SendText(wxid=wxid, msg=text_to_send)
         else:
             key = (wxid, text_to_send)
             with self.pending_lock:

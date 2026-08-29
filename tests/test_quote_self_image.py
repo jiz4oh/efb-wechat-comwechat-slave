@@ -40,6 +40,7 @@ def load_send_text():
         "SlaveChannel": SlaveChannel,
         "threading": threading,
         "load_message_ids": lambda message_id: str(message_id).split(","),
+        "qutoed_text": lambda quoted, text: f"「{quoted}」\\n - - - - - - - - - - - - - - - \\n{text}",
     }
     module = ast.Module(body=[function], type_ignores=[])
     ast.fix_missing_locations(module)
@@ -57,6 +58,14 @@ class RecordingBot:
 
     def SendQuoteText(self, *, wxid, msg, target_msgid):
         self.quotes.append((wxid, msg, target_msgid))
+
+
+class LegacyRecordingBot:
+    def __init__(self):
+        self.texts = []
+
+    def SendText(self, *, wxid, msg):
+        self.texts.append((wxid, msg))
 
 
 class Channel:
@@ -92,6 +101,50 @@ class SelfImageQuoteTest(unittest.TestCase):
 
         self.assertEqual(channel.bot.texts, [])
         self.assertEqual(channel.bot.quotes, [("friend", "这是300w的三者", "123456")])
+
+    def test_reply_without_server_message_id_uses_text_fallback(self):
+        target = Message()
+        target.author = SelfChatMember()
+        target.deliver_to = SlaveChannel()
+        target.uid = ""
+        target.type = MsgType.Image
+        target.text = "原消息"
+        target.vendor_specific = {"comwechat_info": {}}
+
+        message = Message()
+        message.target = target
+        message.text = "回复消息"
+
+        channel = Channel()
+        load_send_text()(channel, "friend", message)
+
+        self.assertEqual(channel.bot.quotes, [])
+        self.assertEqual(
+            channel.bot.texts,
+            [("friend", "「原消息」\\n - - - - - - - - - - - - - - - \\n回复消息")],
+        )
+
+    def test_reply_uses_text_fallback_without_native_quote_api(self):
+        target = Message()
+        target.author = SelfChatMember()
+        target.deliver_to = SlaveChannel()
+        target.uid = "123456"
+        target.type = MsgType.Image
+        target.text = "原消息"
+        target.vendor_specific = {"comwechat_info": {}}
+
+        message = Message()
+        message.target = target
+        message.text = "回复消息"
+
+        channel = Channel()
+        channel.bot = LegacyRecordingBot()
+        load_send_text()(channel, "friend", message)
+
+        self.assertEqual(
+            channel.bot.texts,
+            [("friend", "「原消息」\\n - - - - - - - - - - - - - - - \\n回复消息")],
+        )
 
 
 if __name__ == "__main__":
