@@ -73,7 +73,6 @@ class ComWeChatChannel(SlaveChannel):
     channel_name : str = "ComWechatChannel"
     channel_emoji : str = "💻"
     channel_id : str = "honus.comwechat"
-    file_lock_key = "__file_op__"
 
     bot : WeChatRobot = None
     config : Dict = {}
@@ -122,14 +121,9 @@ class ComWeChatChannel(SlaveChannel):
         self.db: DatabaseManager = DatabaseManager(self)
         self.bot = WeChatRobot()
 
-        # Mechanism for waiting for send confirmation
-        self.sent_msgs: Dict[Any, threading.Event] = {}
-        self.sent_msg_results: Dict[Any, MessageID] = {}
-        self.pending_lock = threading.Lock()
         self.revoke_message_ids = TTLCache(maxsize=200, ttl=max(self.time_out, 1))
         self._file_locks: Dict[ChatID, threading.Lock] = {}
         self._file_locks_lock = threading.Lock()
-        self.send_timeout = self.config.get("send_timeout", 5)
 
         self.wxid = None
         self.base_path = self.config["base_path"] if "base_path" in self.config else self.bot.get_base_path()
@@ -152,56 +146,6 @@ class ComWeChatChannel(SlaveChannel):
                     self.GetContactListBySql()
                 return func(*args, **kwargs)
             return wrapper
-
-        @self.bot.on("sent_msg")
-        def on_sent_msg(msg: Dict):
-            """Callback for messages sent by the bot (potentially from other devices or API)."""
-            self.logger.debug(f"on_sent_msg received: {msg}")
-            sender: str = msg.get("sender")
-            msgid = msg.get("msgid")
-            message_content = msg.get("message")
-            filepath = msg.get("filepath")
-
-            if not sender or not msgid:
-                self.logger.warning("on_sent_msg missing sender or msgid.")
-                return
-
-            if msgid in self.cache:
-                self.logger.warning("self msg due to bug from upstream.")
-                return
-
-            key = None
-            with self.pending_lock:
-                if message_content:
-                    potential_key_text = (sender, message_content)
-                    if potential_key_text in self.sent_msgs:
-                        key = potential_key_text
-                    if key is None:
-                        try:
-                            quote = etree.fromstring(message_content.encode())
-                            potential_key_quote = (
-                                sender,
-                                quote.findtext(".//appmsg/title"),
-                                quote.findtext(".//refermsg/svrid"),
-                            )
-                            if potential_key_quote in self.sent_msgs:
-                                key = potential_key_quote
-                        except (TypeError, ValueError, etree.XMLSyntaxError):
-                            pass
-
-                if filepath:
-                    potential_key_file = (sender, None, self.file_lock_key)
-                    if potential_key_file in self.sent_msgs:
-                        key = potential_key_file
-                        self.logger.debug(f"Found pending file operation for key: {key}")
-
-                if key and key in self.sent_msgs:
-                    event = self.sent_msgs[key]
-                    self.sent_msg_results[key] = MessageID(str(msgid))
-                    event.set()
-                    self.logger.debug(f"Matched sent message {key} with msgid {msgid}. Signaled event.")
-                else:
-                    self.logger.warning(f"No pending message found matching sender {sender}, content/filepath.")
 
         @self.bot.on("self_msg")
         @update_contacts_wrapper
@@ -1246,7 +1190,11 @@ class ComWeChatChannel(SlaveChannel):
                 if match.group(1) == hashlib.md5(self.channel_id.encode('utf-8')).hexdigest():
                     msgid = match.group(2)
                     self.logger.debug(f"提取到的消息 ID: {msgid}")
-                    self.bot.ForwardMessage(wxid = chat_uid, msgid = msgid)
+                    response = self.bot.ForwardMessage(wxid=chat_uid, msgid=msgid)
+                    svrid = self._send_svrid(response)
+                    if svrid is None:
+                        raise EFBMessageError("转发失败，请在手机端确认")
+                    msg.uid = dump_message_ids([svrid])
                 else:
                     self.logger.debug(f"非本 slave 消息: {match.group(1)}/{match.group(2)}")
                 return msg
@@ -1346,8 +1294,8 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     users, message = users_message[0], ''
                 if users != '':
-                    #TODO get msgid for SendAt
                     res = self.bot.SendAt(chatroom_id = chat_uid, wxids = users, msg = message)
+                    msg_ids.append(self._send_svrid(res))
                 else:
                     msg_ids.append(self.send_text(chat_uid, msg))
             elif msg.text.startswith('/sendcard'):
@@ -1357,8 +1305,8 @@ class ComWeChatChannel(SlaveChannel):
                 else:
                     user, nickname = user_nickname[0], ''
                 if user != '':
-                    #TODO get msgid for SendCard
                     res = self.bot.SendCard(receiver = chat_uid, share_wxid = user, nickname = nickname)
+                    msg_ids.append(self._send_svrid(res))
                 else:
                     msg_ids.append(self.send_text(chat_uid, msg))
             elif msg.text.startswith('/addfriend'):
@@ -1410,57 +1358,29 @@ class ComWeChatChannel(SlaveChannel):
                 self._file_locks[wxid] = threading.Lock()
             return self._file_locks[wxid]
 
-    def _wait(self, key: Any, timeout: int) -> Optional[MessageID]:
-        """Waits for the event associated with key and returns the msgid."""
-        event = self.sent_msgs.get(key)
-        if not event:
-            self.logger.error(f"No event found for key {key} before waiting.")
+    @staticmethod
+    def _send_svrid(response: Dict) -> Optional[MessageID]:
+        if not isinstance(response, dict) or response.get("result") != "OK":
             return None
-
-        self.logger.debug(f"Waiting for event for key: {key} with timeout {timeout}s")
-        event_set = event.wait(timeout=timeout)
-
-        with self.pending_lock:
-            # Always remove the key from pending and results after waiting or timeout
-            self.sent_msgs.pop(key, None)
-            received_msgid = self.sent_msg_results.pop(key, None)
-
-        if not event_set:
-            self.logger.warning(f"Timeout waiting for send confirmation for key: {key}")
-            return None
-
-        if not received_msgid:
-            self.logger.error(f"Event signaled for key {key}, but no msgid found in results.")
-            return None
-
-        self.logger.debug(f"Successfully received msgid {received_msgid} for key {key}")
-        return received_msgid
+        svrid = str(response.get("svrid", ""))
+        return MessageID(svrid) if svrid.isdecimal() else None
 
     def send_text(self, wxid: ChatID, msg: Message):
-        """Sends a text message and waits for confirmation."""
+        """Sends a text message and returns its server message ID."""
         text_to_send = msg.text
 
         if isinstance(msg.target, Message) and text_to_send:
             msgid = next((item for item in load_message_ids(msg.target.uid) if item.isdecimal()), None)
             send_quote_text = getattr(self.bot, "SendQuoteText", None)
             if msgid and callable(send_quote_text):
-                key = (wxid, text_to_send, msgid)
-                with self.pending_lock:
-                    self.sent_msgs[key] = threading.Event()
-                send_quote_text(wxid=wxid, msg=text_to_send, target_msgid=msgid)
+                response = send_quote_text(wxid=wxid, msg=text_to_send, target_msgid=msgid)
             else:
                 text_to_send = qutoed_text(msg.target.text, text_to_send)
-                key = (wxid, text_to_send)
-                with self.pending_lock:
-                    self.sent_msgs[key] = threading.Event()
-                self.bot.SendText(wxid=wxid, msg=text_to_send)
+                response = self.bot.SendText(wxid=wxid, msg=text_to_send)
         else:
-            key = (wxid, text_to_send)
-            with self.pending_lock:
-                self.sent_msgs[key] = threading.Event()
-            self.bot.SendText(wxid=wxid, msg=text_to_send)
+            response = self.bot.SendText(wxid=wxid, msg=text_to_send)
 
-        return self._wait(key, self.send_timeout)
+        return self._send_svrid(response)
 
     def _save_file(self, msg: Message, rename: bool = False):
         name = os.path.basename(msg.file.name)
@@ -1475,28 +1395,21 @@ class ComWeChatChannel(SlaveChannel):
     @staticmethod
     def _send_file_with_lock(fn: Callable):
         def deco(self, wxid: ChatID, msg: Message):
-            key = (wxid, None, self.file_lock_key)
-
-            with self.pending_lock:
-                self.sent_msgs[key] = threading.Event()
-
             with self._get_file_lock(wxid):
-                fn(self, wxid, msg)
-
-                return self._wait(key, self.send_timeout)
+                return self._send_svrid(fn(self, wxid, msg))
         return deco
 
     @_send_file_with_lock
     def send_image(self, wxid: ChatID, msg: Message):
-        self.bot.SendImage(receiver=wxid, img_path=self._save_file(msg))
+        return self.bot.SendImage(receiver=wxid, img_path=self._save_file(msg))
 
     @_send_file_with_lock
     def send_file(self, wxid: ChatID, msg: Message):
-        self.bot.SendFile(receiver=wxid, file_path=self._save_file(msg, True))
+        return self.bot.SendFile(receiver=wxid, file_path=self._save_file(msg, True))
 
     @_send_file_with_lock
     def send_emotion(self, wxid: ChatID, msg: Message):
-        self.bot.SendEmotion(wxid=wxid, img_path=self._save_file(msg))
+        return self.bot.SendEmotion(wxid=wxid, img_path=self._save_file(msg))
 
     def get_chat_picture(self, chat: 'Chat') -> BinaryIO:
         wxid = chat.uid

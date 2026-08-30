@@ -1,7 +1,7 @@
 import ast
-import threading
 import unittest
 from pathlib import Path
+from typing import Dict, Optional
 
 
 SOURCE = Path(__file__).parents[1] / "efb_wechat_comwechat_slave" / "ComWechat.py"
@@ -38,7 +38,6 @@ def load_send_text():
         "MsgType": MsgType,
         "SelfChatMember": SelfChatMember,
         "SlaveChannel": SlaveChannel,
-        "threading": threading,
         "load_message_ids": lambda message_id: str(message_id).split(","),
         "qutoed_text": lambda quoted, text: f"「{quoted}」\\n - - - - - - - - - - - - - - - \\n{text}",
     }
@@ -48,6 +47,18 @@ def load_send_text():
     return namespace["send_text"]
 
 
+def load_send_svrid():
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
+    channel = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ComWeChatChannel")
+    function = next(node for node in channel.body if isinstance(node, ast.FunctionDef) and node.name == "_send_svrid")
+    function.decorator_list = []
+    namespace = {"Dict": Dict, "Optional": Optional, "MessageID": str}
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    exec(compile(module, str(SOURCE), "exec"), namespace)
+    return namespace["_send_svrid"]
+
+
 class RecordingBot:
     def __init__(self):
         self.texts = []
@@ -55,9 +66,11 @@ class RecordingBot:
 
     def SendText(self, *, wxid, msg):
         self.texts.append((wxid, msg))
+        return {"msg": 1, "result": "OK", "svrid": "1234567"}
 
     def SendQuoteText(self, *, wxid, msg, target_msgid):
         self.quotes.append((wxid, msg, target_msgid))
+        return {"msg": 1, "result": "OK", "svrid": "1234567"}
 
 
 class LegacyRecordingBot:
@@ -66,6 +79,7 @@ class LegacyRecordingBot:
 
     def SendText(self, *, wxid, msg):
         self.texts.append((wxid, msg))
+        return {"msg": 1, "result": "OK", "svrid": "1234567"}
 
 
 class Channel:
@@ -73,16 +87,21 @@ class Channel:
         self.wxid = "wxid-self"
         self.me = {"wxNickName": "自己"}
         self.group_members = {}
-        self.sent_msgs = {}
-        self.pending_lock = threading.Lock()
-        self.send_timeout = 1
         self.bot = RecordingBot()
 
-    def _wait(self, key, timeout):
-        return key
+    @staticmethod
+    def _send_svrid(response):
+        return str(response["svrid"]) if response.get("result") == "OK" else None
 
 
 class SelfImageQuoteTest(unittest.TestCase):
+    def test_send_response_supplies_server_id_without_downstream_matching(self):
+        send_svrid = load_send_svrid()
+
+        self.assertEqual(send_svrid({"msg": 1, "result": "OK", "svrid": "1234567"}), "1234567")
+        self.assertIsNone(send_svrid({"msg": 0, "result": "ERROR"}))
+        self.assertNotIn("sent_msgs", SOURCE.read_text(encoding="utf-8"))
+
     def test_reply_to_self_image_uses_native_quote_api(self):
         target = Message()
         target.author = SelfChatMember()
@@ -96,10 +115,11 @@ class SelfImageQuoteTest(unittest.TestCase):
         message.text = "这是300w的三者"
 
         channel = Channel()
-        load_send_text()(channel, "friend", message)
+        svrid = load_send_text()(channel, "friend", message)
 
         self.assertEqual(channel.bot.texts, [])
         self.assertEqual(channel.bot.quotes, [("friend", "这是300w的三者", "123456")])
+        self.assertEqual(svrid, "1234567")
 
     def test_reply_without_server_message_id_uses_text_fallback(self):
         target = Message()
