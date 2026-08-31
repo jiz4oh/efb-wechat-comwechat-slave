@@ -38,6 +38,7 @@ def load_send_text():
         "MsgType": MsgType,
         "SelfChatMember": SelfChatMember,
         "SlaveChannel": SlaveChannel,
+        "is_message_reference": lambda value: str(value).isdigit() or str(value).startswith("local:"),
         "load_message_ids": lambda message_id: str(message_id).split(","),
         "qutoed_text": lambda quoted, text: f"「{quoted}」\\n - - - - - - - - - - - - - - - \\n{text}",
     }
@@ -47,16 +48,21 @@ def load_send_text():
     return namespace["send_text"]
 
 
-def load_send_svrid():
+def load_send_message_reference():
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
     channel = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ComWeChatChannel")
-    function = next(node for node in channel.body if isinstance(node, ast.FunctionDef) and node.name == "_send_svrid")
+    function = next(node for node in channel.body if isinstance(node, ast.FunctionDef) and node.name == "_send_message_reference")
     function.decorator_list = []
-    namespace = {"Dict": Dict, "Optional": Optional, "MessageID": str}
+    namespace = {
+        "Dict": Dict,
+        "Optional": Optional,
+        "MessageID": str,
+        "is_message_reference": lambda value: str(value).isdigit() or str(value).startswith("local:"),
+    }
     module = ast.Module(body=[function], type_ignores=[])
     ast.fix_missing_locations(module)
     exec(compile(module, str(SOURCE), "exec"), namespace)
-    return namespace["_send_svrid"]
+    return namespace["_send_message_reference"]
 
 
 class RecordingBot:
@@ -90,16 +96,19 @@ class Channel:
         self.bot = RecordingBot()
 
     @staticmethod
-    def _send_svrid(response):
-        return str(response["svrid"]) if response.get("result") == "OK" else None
+    def _send_message_reference(response):
+        if response.get("result") != "OK":
+            return None
+        return str(response.get("svrid") or response.get("localref"))
 
 
 class SelfImageQuoteTest(unittest.TestCase):
     def test_send_response_supplies_server_id_without_downstream_matching(self):
-        send_svrid = load_send_svrid()
+        send_reference = load_send_message_reference()
 
-        self.assertEqual(send_svrid({"msg": 1, "result": "OK", "svrid": "1234567"}), "1234567")
-        self.assertIsNone(send_svrid({"msg": 0, "result": "ERROR"}))
+        self.assertEqual(send_reference({"msg": 1, "result": "OK", "svrid": "1234567"}), "1234567")
+        self.assertEqual(send_reference({"msg": 1, "result": "OK", "localref": "local:7:123"}), "local:7:123")
+        self.assertIsNone(send_reference({"msg": 0, "result": "ERROR"}))
         self.assertNotIn("sent_msgs", SOURCE.read_text(encoding="utf-8"))
 
     def test_reply_to_self_image_uses_native_quote_api(self):

@@ -203,6 +203,19 @@ def dump_message_ids(ids: list[MessageID]) -> MessageID:
 def load_message_ids(id: MessageID) -> list[MessageID]:
     return [MessageID(item) for item in str(id).split(",") if item]
 
+def is_message_reference(value: MessageID) -> bool:
+    reference = str(value)
+    if reference.isdecimal():
+        return int(reference) > 0
+    parts = reference.split(":")
+    return (
+        len(parts) == 3
+        and parts[0] == "local"
+        and parts[1].isdecimal()
+        and parts[2].isdecimal()
+        and int(parts[2]) > 0
+    )
+
 WC_EMOTICON_CONVERSION = {
     '[微笑]': '😃', '[Smile]': '😃',
     '[撇嘴]': '😖', '[Grimace]': '😖',

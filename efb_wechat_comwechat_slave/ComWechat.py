@@ -43,6 +43,7 @@ from .Utils import (
     resolve_hooked_wechat_image_path,
     WC_EMOTICON_CONVERSION,
     dump_message_ids,
+    is_message_reference,
     load_message_ids,
 )
 from .db import DatabaseManager
@@ -87,7 +88,7 @@ class ComWeChatChannel(SlaveChannel):
     cache =  TTLCache(maxsize=200, ttl= time_out)  # 缓存发送过的消息ID
     file_msg : Dict = {}                           # 存储待修改的文件类消息 {path : msg}
     delete_file : Dict = {}                        # 存储待删除的消息 {path : time}
-    forward_pattern = r"ehforwarderbot:\/\/([^/]+)\/forward\/(\d+)"
+    forward_pattern = r"ehforwarderbot:\/\/([^/]+)\/forward\/((?:\d+|local:\d+:\d+))"
 
     __version__ = version.__version__
     logger: logging.Logger = logging.getLogger("comwechat")
@@ -269,11 +270,20 @@ class ComWeChatChannel(SlaveChannel):
 
             newmsgid = MessageID(re.search("<newmsgid>(.*?)<\/newmsgid>", msg["message"]).group(1))
 
-            if self.revoke_message_ids.get(newmsgid):
-                self.logger.debug("Ignoring revoke feedback for server msgid %s", newmsgid)
+            references = self._message_references(newmsgid)
+            if any(self.revoke_message_ids.get(reference) for reference in references):
+                self.logger.debug("Ignoring revoke feedback for message references %s", references)
                 return
 
-            efb_msg = Message(chat = chat , uid = newmsgid)
+            message_uid = next(
+                (
+                    reference
+                    for reference in references
+                    if coordinator.master.get_message_by_id(chat=chat, msg_id=reference) is not None
+                ),
+                newmsgid,
+            )
+            efb_msg = Message(chat=chat, uid=message_uid)
             coordinator.send_status(
                 MessageRemoval(source_channel=self, destination_channel=coordinator.master, message=efb_msg)
             )
@@ -561,6 +571,22 @@ class ComWeChatChannel(SlaveChannel):
 
         self.send_efb_msgs(msg, uid=MessageID(str(int(time.time()))), chat=chat, author=author, type=MsgType.Text)
 
+    def _message_references(self, msgid: MessageID) -> list[MessageID]:
+        references = [MessageID(str(msgid))]
+        get_chat_msg = getattr(self.bot, "GetChatMsgBySvrId", None)
+        if not callable(get_chat_msg):
+            return references
+        try:
+            response = get_chat_msg(msgid=str(msgid))
+        except Exception:
+            self.logger.debug("Failed to resolve local message reference for %s", msgid, exc_info=True)
+            return references
+        data = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
+        localref = MessageID(str(data.get("localref", ""))) if isinstance(data, dict) else MessageID("")
+        if is_message_reference(localref) and localref not in references:
+            references.append(localref)
+        return references
+
     def handle_msg(self , msg : Dict[str, Any] , author : 'ChatMember' , chat : 'Chat'):
         emojiList = re.findall('\[[\w|！|!| ]+\]' , msg["message"])
         for emoji in emojiList:
@@ -571,9 +597,10 @@ class ComWeChatChannel(SlaveChannel):
 
         if msg["msgid"] not in self.cache:
             self.cache[msg["msgid"]] = msg["type"]
-            master_message = coordinator.master.get_message_by_id(chat=chat, msg_id=msg["msgid"])
-            if master_message is not None:
-                return
+            references = self._message_references(MessageID(str(msg["msgid"]))) if msg.get("isSendMsg") else [msg["msgid"]]
+            for reference in references:
+                if coordinator.master.get_message_by_id(chat=chat, msg_id=reference) is not None:
+                    return
         else:
             if self.cache[msg["msgid"]] == msg["type"]:
                 return
@@ -1191,10 +1218,10 @@ class ComWeChatChannel(SlaveChannel):
                     msgid = match.group(2)
                     self.logger.debug(f"提取到的消息 ID: {msgid}")
                     response = self.bot.ForwardMessage(wxid=chat_uid, msgid=msgid)
-                    svrid = self._send_svrid(response)
-                    if svrid is None:
+                    reference = self._send_message_reference(response)
+                    if reference is None:
                         raise EFBMessageError("转发失败，请在手机端确认")
-                    msg.uid = dump_message_ids([svrid])
+                    msg.uid = dump_message_ids([reference])
                 else:
                     self.logger.debug(f"非本 slave 消息: {match.group(1)}/{match.group(2)}")
                 return msg
@@ -1266,8 +1293,8 @@ class ComWeChatChannel(SlaveChannel):
                 res = self.bot.AddChatroomMember(chatroom_id = chat_uid, wxids = users)
             elif msg.text.startswith('/forward'):
                 if isinstance(msg.target, Message):
-                    msgid = msg.target.uid
-                    if msgid.isdecimal():
+                    msgid = next((item for item in load_message_ids(msg.target.uid) if is_message_reference(item)), None)
+                    if msgid:
                         url = f"ehforwarderbot://{hashlib.md5(self.channel_id.encode('utf-8')).hexdigest()}/forward/{msgid}"
                         prompt = "请将这条信息转发到目标聊天中"
                         text = f"{url}\n{prompt}"
@@ -1295,7 +1322,7 @@ class ComWeChatChannel(SlaveChannel):
                     users, message = users_message[0], ''
                 if users != '':
                     res = self.bot.SendAt(chatroom_id = chat_uid, wxids = users, msg = message)
-                    msg_ids.append(self._send_svrid(res))
+                    msg_ids.append(self._send_message_reference(res))
                 else:
                     msg_ids.append(self.send_text(chat_uid, msg))
             elif msg.text.startswith('/sendcard'):
@@ -1306,7 +1333,7 @@ class ComWeChatChannel(SlaveChannel):
                     user, nickname = user_nickname[0], ''
                 if user != '':
                     res = self.bot.SendCard(receiver = chat_uid, share_wxid = user, nickname = nickname)
-                    msg_ids.append(self._send_svrid(res))
+                    msg_ids.append(self._send_message_reference(res))
                 else:
                     msg_ids.append(self.send_text(chat_uid, msg))
             elif msg.text.startswith('/addfriend'):
@@ -1359,18 +1386,21 @@ class ComWeChatChannel(SlaveChannel):
             return self._file_locks[wxid]
 
     @staticmethod
-    def _send_svrid(response: Dict) -> Optional[MessageID]:
+    def _send_message_reference(response: Dict) -> Optional[MessageID]:
         if not isinstance(response, dict) or response.get("result") != "OK":
             return None
         svrid = str(response.get("svrid", ""))
-        return MessageID(svrid) if svrid.isdecimal() else None
+        if is_message_reference(MessageID(svrid)):
+            return MessageID(svrid)
+        localref = MessageID(str(response.get("localref", "")))
+        return localref if is_message_reference(localref) else None
 
     def send_text(self, wxid: ChatID, msg: Message):
-        """Sends a text message and returns its server message ID."""
+        """Sends a text message and returns its native message reference."""
         text_to_send = msg.text
 
         if isinstance(msg.target, Message) and text_to_send:
-            msgid = next((item for item in load_message_ids(msg.target.uid) if item.isdecimal()), None)
+            msgid = next((item for item in load_message_ids(msg.target.uid) if is_message_reference(item)), None)
             send_quote_text = getattr(self.bot, "SendQuoteText", None)
             if msgid and callable(send_quote_text):
                 response = send_quote_text(wxid=wxid, msg=text_to_send, target_msgid=msgid)
@@ -1380,7 +1410,7 @@ class ComWeChatChannel(SlaveChannel):
         else:
             response = self.bot.SendText(wxid=wxid, msg=text_to_send)
 
-        return self._send_svrid(response)
+        return self._send_message_reference(response)
 
     def _save_file(self, msg: Message, rename: bool = False):
         name = os.path.basename(msg.file.name)
@@ -1396,7 +1426,7 @@ class ComWeChatChannel(SlaveChannel):
     def _send_file_with_lock(fn: Callable):
         def deco(self, wxid: ChatID, msg: Message):
             with self._get_file_lock(wxid):
-                return self._send_svrid(fn(self, wxid, msg))
+                return self._send_message_reference(fn(self, wxid, msg))
         return deco
 
     @_send_file_with_lock
@@ -1456,24 +1486,24 @@ class ComWeChatChannel(SlaveChannel):
             raise EFBMessageError("撤回消息缺少有效的消息 ID")
 
         failures = []
-        for server_msgid in references:
-            if not server_msgid.isdecimal():
-                raise EFBMessageError(f"无效的消息 ID: {server_msgid}")
+        for message_reference in references:
+            if not is_message_reference(message_reference):
+                raise EFBMessageError(f"无效的消息 ID: {message_reference}")
 
-            self.revoke_message_ids[server_msgid] = True
+            self.revoke_message_ids[message_reference] = True
             try:
                 response = self.bot.RevokeMessage(
                     wxid=chat_uid,
-                    msgid=server_msgid,
+                    msgid=message_reference,
                 )
             except Exception as exc:
-                self.revoke_message_ids.pop(server_msgid, None)
+                self.revoke_message_ids.pop(message_reference, None)
                 failures.append(str(exc))
                 continue
 
             reason = self._revoke_failure_reason(response)
             if reason is not None:
-                self.revoke_message_ids.pop(server_msgid, None)
+                self.revoke_message_ids.pop(message_reference, None)
 
                 failures.append(reason)
 
@@ -1511,7 +1541,10 @@ class ComWeChatChannel(SlaveChannel):
             return None
 
         data = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
-        if not isinstance(data, dict) or str(data.get("msgid")) != str(msg_id):
+        if not isinstance(data, dict) or str(msg_id) not in {
+            str(data.get("msgid", "")),
+            str(data.get("localref", "")),
+        }:
             return None
         if str(data.get("sender")) != str(chat.uid):
             self.logger.warning(
