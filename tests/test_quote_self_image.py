@@ -72,11 +72,11 @@ class RecordingBot:
 
     def SendText(self, *, wxid, msg):
         self.texts.append((wxid, msg))
-        return {"msg": 1, "result": "OK", "svrid": "1234567"}
+        return {"msg": 1, "result": "OK", "localref": "local:0:1234567"}
 
     def SendQuoteText(self, *, wxid, msg, target_msgid):
         self.quotes.append((wxid, msg, target_msgid))
-        return {"msg": 1, "result": "OK", "svrid": "1234567"}
+        return {"msg": 1, "result": "OK", "localref": "local:0:1234567"}
 
 
 class LegacyRecordingBot:
@@ -106,7 +106,7 @@ class SelfImageQuoteTest(unittest.TestCase):
     def test_send_response_supplies_server_id_without_downstream_matching(self):
         send_reference = load_send_message_reference()
 
-        self.assertEqual(send_reference({"msg": 1, "result": "OK", "svrid": "1234567"}), "1234567")
+        self.assertIsNone(send_reference({"msg": 1, "result": "OK", "svrid": "1234567"}))
         self.assertEqual(send_reference({"msg": 1, "result": "OK", "localref": "local:7:123"}), "local:7:123")
         self.assertIsNone(send_reference({"msg": 0, "result": "ERROR"}))
         self.assertNotIn("sent_msgs", SOURCE.read_text(encoding="utf-8"))
@@ -124,11 +124,11 @@ class SelfImageQuoteTest(unittest.TestCase):
         message.text = "这是300w的三者"
 
         channel = Channel()
-        svrid = load_send_text()(channel, "friend", message)
+        localref = load_send_text()(channel, "friend", message)
 
         self.assertEqual(channel.bot.texts, [])
         self.assertEqual(channel.bot.quotes, [("friend", "这是300w的三者", "123456")])
-        self.assertEqual(svrid, "1234567")
+        self.assertEqual(localref, "local:0:1234567")
 
     def test_reply_without_server_message_id_uses_text_fallback(self):
         target = Message()

@@ -1389,9 +1389,6 @@ class ComWeChatChannel(SlaveChannel):
     def _send_message_reference(response: Dict) -> Optional[MessageID]:
         if not isinstance(response, dict) or response.get("result") != "OK":
             return None
-        svrid = str(response.get("svrid", ""))
-        if is_message_reference(MessageID(svrid)):
-            return MessageID(svrid)
         localref = MessageID(str(response.get("localref", "")))
         return localref if is_message_reference(localref) else None
 

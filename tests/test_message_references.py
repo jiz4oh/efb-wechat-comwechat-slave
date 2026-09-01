@@ -43,7 +43,7 @@ class MessageReferenceTest(unittest.TestCase):
     def test_send_response_prefers_server_id_then_local_reference(self):
         parse = ComWeChatChannel._send_message_reference
 
-        self.assertEqual(parse({"result": "OK", "svrid": "456", "localref": "local:7:123"}), "456")
+        self.assertEqual(parse({"result": "OK", "svrid": "456"}), None)
         self.assertEqual(parse({"result": "OK", "localref": "local:7:123"}), "local:7:123")
         self.assertIsNone(parse({"result": "ERROR", "localref": "local:7:123"}))
 
