@@ -637,7 +637,7 @@ class ComWeChatChannel(SlaveChannel):
             return
 
         try:
-            processed = MsgProcess(msg, chat, self.direct_transfer)
+            processed = MsgProcess(msg, chat, self.direct_transfer, self._message_references)
             self.send_efb_msgs(
                 processed,
                 author=author,

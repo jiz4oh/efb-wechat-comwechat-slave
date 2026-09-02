@@ -1,4 +1,4 @@
-from typing import Mapping, Tuple, List, Union, IO
+from typing import Callable, Mapping, Tuple, List, Union, IO
 import magic
 from lxml import etree
 from functools import partial
@@ -225,7 +225,11 @@ def efb_mp_post_wrapper(item: etree.Element, show_name: str = None) -> Message:
         text=f'{title}\n  - - - - - - - - - - - - - - - \n{digest}' if digest else str(title),
     )
 
-def efb_share_link_wrapper(message: dict, chat) -> Message:
+def efb_share_link_wrapper(
+    message: dict,
+    chat,
+    message_reference_resolver: Callable[[MessageID], List[MessageID]] = None,
+) -> Message:
     """
     处理msgType49消息 - 复合xml, xml 中 //appmsg/type 指示具体消息类型.
     /msg/appmsg/type
@@ -558,11 +562,21 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                 vendor_specific={ "is_refer": True }
             )
             prefix = ""
-            recorded = False
-            from_me = (refer_chatusr or refer_fromusr) == message["self"]
-            if refer_svrid is not None and from_me:
+            recorded_reference = None
+            if refer_svrid is not None:
+                references = [MessageID(refer_svrid)]
+                if callable(message_reference_resolver):
+                    try:
+                        resolved_references = message_reference_resolver(MessageID(refer_svrid))
+                    except Exception:
+                        print_exc()
+                    else:
+                        if resolved_references:
+                            references = [MessageID(str(reference)) for reference in resolved_references]
+                            if MessageID(refer_svrid) not in references:
+                                references.insert(0, MessageID(refer_svrid))
                 try:
-                    if "@chatroom" in refer_fromusr:  # 群聊中回复的消息
+                    if "@chatroom" in (refer_fromusr or ""):  # 群聊中回复的消息
                         c = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
                             uid = message["sender"],
                         ))
@@ -570,13 +584,21 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                         c = ChatMgr.build_efb_chat_as_private(EFBPrivateChat(
                             uid = message["sender"],
                         ))
-                    # 从 master channel 中根据微信 id 查找，如果找到说明是由 comwechat self_msg 发送过去的
-                    recorded = coordinator.master.get_message_by_id(chat=c, msg_id=refer_svrid)
-                except NotImplementedError as e:
+                    for reference in references:
+                        try:
+                            if coordinator.master.get_message_by_id(chat=c, msg_id=reference) is not None:
+                                recorded_reference = reference
+                                break
+                        except NotImplementedError:
+                            print_exc()
+                            break
+                        except Exception:
+                            print_exc()
+                except Exception:
                     print_exc()
             if refer_displayname is not None:
                 prefix = f"{refer_displayname}:"
-            if refer_svrid is None or (from_me and not recorded):
+            if refer_svrid is None or recorded_reference is None:
                 #因为微信会将视频/文件等拆分成多条消息，refer_svrid 对应的可能是 slave_message_id 的一部分
                 try:
                     if refer_msgType == 1: # 被引用的消息是文本
@@ -599,7 +621,7 @@ def efb_share_link_wrapper(message: dict, chat) -> Message:
                     efb_msg.text = result_text
             else:
                 efb_msg.target = Message(
-                    uid=MessageID(refer_svrid),
+                    uid=MessageID(str(recorded_reference)),
                     chat=chat,
                 )
         elif type == 63: # 直播（微信视频号分享）

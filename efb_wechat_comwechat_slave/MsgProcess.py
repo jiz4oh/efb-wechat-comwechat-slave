@@ -11,7 +11,12 @@ from lxml import etree
 from ehforwarderbot import utils as efb_utils
 from ehforwarderbot.message import Message
 
-def MsgProcess(msg : dict , chat, direct_transfer: bool = False) -> Union[Message, List[Message]]:
+def MsgProcess(
+    msg: dict,
+    chat,
+    direct_transfer: bool = False,
+    message_reference_resolver=None,
+) -> Union[Message, List[Message]]:
 
     if msg["type"] == "text":
         at_list = {}
@@ -53,7 +58,9 @@ def MsgProcess(msg : dict , chat, direct_transfer: bool = False) -> Union[Messag
         if msg.get("filepath") and os.path.exists(msg["filepath"]) and ("Cache" not in msg["filepath"]):
             file = load_local_file_for_transfer(msg["filepath"], direct_transfer)
             return efb_file_wrapper(file, os.path.basename(msg["filepath"]))
-        return efb_share_link_wrapper(msg, chat)  # may return msgs in a list
+        if message_reference_resolver is None:
+            return efb_share_link_wrapper(msg, chat)  # may return msgs in a list
+        return efb_share_link_wrapper(msg, chat, message_reference_resolver)  # may return msgs in a list
 
     elif msg["type"] == "file":
         file = load_local_file_for_transfer(msg["filepath"], direct_transfer)
