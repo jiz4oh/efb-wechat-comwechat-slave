@@ -212,6 +212,7 @@ def is_message_reference(value: MessageID) -> bool:
         len(parts) == 3
         and parts[0] == "local"
         and parts[1].isdecimal()
+        and int(parts[1]) > 0
         and parts[2].isdecimal()
         and int(parts[2]) > 0
     )

@@ -576,7 +576,14 @@ class ComWeChatChannel(SlaveChannel):
         svrid = str(msgid)
         if not svrid.isdigit() or int(svrid) <= 0:
             return references
-        for db_name in self.dbkey.database_names("MSG"):
+
+        try:
+            db_names = self.dbkey.database_names("MSG") or []
+        except Exception:
+            self.logger.debug("Failed to discover message database names", exc_info=True)
+            return references
+
+        for db_name in sorted(db_names):
             match = re.fullmatch(r"MSG(\d+)\.db", db_name)
             if match is None:
                 continue
@@ -587,7 +594,7 @@ class ComWeChatChannel(SlaveChannel):
             rows = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
             if not isinstance(rows, list) or len(rows) != 2 or len(rows[1]) != 1 or not str(rows[1][0]).isdigit():
                 continue
-            localref = MessageID(f"local:{int(match.group(1))}:{int(rows[1][0])}")
+            localref = MessageID(f"local:{int(match.group(1)) + 1}:{int(rows[1][0])}")
             if is_message_reference(localref):
                 references.append(localref)
             break

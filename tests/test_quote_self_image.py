@@ -72,11 +72,11 @@ class RecordingBot:
 
     def SendText(self, *, wxid, msg):
         self.texts.append((wxid, msg))
-        return {"msg": 1, "result": "OK", "localref": "local:0:1234567"}
+        return {"msg": 1, "result": "OK", "localref": "local:1:1234567"}
 
     def SendQuoteText(self, *, wxid, msg, target_msgid):
         self.quotes.append((wxid, msg, target_msgid))
-        return {"msg": 1, "result": "OK", "localref": "local:0:1234567"}
+        return {"msg": 1, "result": "OK", "localref": "local:1:1234567"}
 
 
 class LegacyRecordingBot:
@@ -128,7 +128,7 @@ class SelfImageQuoteTest(unittest.TestCase):
 
         self.assertEqual(channel.bot.texts, [])
         self.assertEqual(channel.bot.quotes, [("friend", "这是300w的三者", "123456")])
-        self.assertEqual(localref, "local:0:1234567")
+        self.assertEqual(localref, "local:1:1234567")
 
     def test_reply_without_server_message_id_uses_text_fallback(self):
         target = Message()
