@@ -573,18 +573,24 @@ class ComWeChatChannel(SlaveChannel):
 
     def _message_references(self, msgid: MessageID) -> list[MessageID]:
         references = [MessageID(str(msgid))]
-        get_chat_msg = getattr(self.bot, "GetChatMsgBySvrId", None)
-        if not callable(get_chat_msg):
+        svrid = str(msgid)
+        if not svrid.isdigit() or int(svrid) <= 0:
             return references
-        try:
-            response = get_chat_msg(msgid=str(msgid))
-        except Exception:
-            self.logger.debug("Failed to resolve local message reference for %s", msgid, exc_info=True)
-            return references
-        data = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
-        localref = MessageID(str(data.get("localref", ""))) if isinstance(data, dict) else MessageID("")
-        if is_message_reference(localref) and localref not in references:
-            references.append(localref)
+        for db_name in self.dbkey.database_names("MSG"):
+            match = re.fullmatch(r"MSG(\d+)\.db", db_name)
+            if match is None:
+                continue
+            response = self.query_database(
+                db_name=db_name,
+                sql=f"select localId from MSG where MsgSvrID={svrid};",
+            )
+            rows = response.get("data") if isinstance(response, dict) and response.get("result") == "OK" else None
+            if not isinstance(rows, list) or len(rows) != 2 or len(rows[1]) != 1 or not str(rows[1][0]).isdigit():
+                continue
+            localref = MessageID(f"local:{int(match.group(1))}:{int(rows[1][0])}")
+            if is_message_reference(localref):
+                references.append(localref)
+            break
         return references
 
     def handle_msg(self , msg : Dict[str, Any] , author : 'ChatMember' , chat : 'Chat'):

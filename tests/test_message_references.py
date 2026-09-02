@@ -30,6 +30,8 @@ class MessageReferenceTest(unittest.TestCase):
         channel = ComWeChatChannel.__new__(ComWeChatChannel)
         channel.logger = logging.getLogger("test-message-references")
         channel.bot = RecordingBot()
+        channel.dbkey = type("DbKey", (), {"database_names": lambda _self, _prefix: ["MSG7.db"]})()
+        channel.query_database = lambda **_kwargs: {"result": "OK", "data": [["localId"], ["123"]]}
         channel.revoke_message_ids = TTLCache(maxsize=20, ttl=30)
         return channel
 
@@ -47,10 +49,11 @@ class MessageReferenceTest(unittest.TestCase):
         self.assertEqual(parse({"result": "OK", "localref": "local:7:123"}), "local:7:123")
         self.assertIsNone(parse({"result": "ERROR", "localref": "local:7:123"}))
 
-    def test_resolves_server_feedback_to_local_reference(self):
+    def test_resolves_server_feedback_to_local_reference_from_database(self):
         channel = self.make_channel()
 
         self.assertEqual(channel._message_references("456"), ["456", "local:7:123"])
+        self.assertEqual(channel.bot.calls, [])
 
     def test_revoke_passes_local_reference_to_native(self):
         channel = self.make_channel()
