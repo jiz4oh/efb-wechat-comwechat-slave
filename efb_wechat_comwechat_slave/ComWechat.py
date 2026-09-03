@@ -1206,9 +1206,6 @@ class ComWeChatChannel(SlaveChannel):
     def send_message(self, msg : Message) -> Message:
         chat_uid = msg.chat.uid
 
-        if msg.edit:
-            pass     # todo
-
         if self.wxid is None:
             if self.is_login():
                 self.get_me()
@@ -1224,7 +1221,48 @@ class ComWeChatChannel(SlaveChannel):
 
         self._mark_chat_as_read(chat_uid, "outbound")
 
-        if msg.text:
+        if msg.edit:
+            if (msg.text or "").startswith("/"):
+                raise EFBMessageError("不支持编辑命令消息")
+
+            references = list(dict.fromkeys(load_message_ids(msg.uid))) if msg.uid else []
+            if not references:
+                raise EFBMessageError("编辑消息缺少有效的消息 ID")
+            invalid_reference = next(
+                (reference for reference in references if not is_message_reference(reference)),
+                None,
+            )
+            if invalid_reference:
+                raise EFBMessageError(f"无效的消息 ID: {invalid_reference}")
+
+            if not msg.edit_media and msg.type in (
+                MsgType.Voice,
+                MsgType.Image,
+                MsgType.File,
+                MsgType.Video,
+                MsgType.Animation,
+                MsgType.Sticker,
+            ):
+                media_reference = references[0]
+                caption_references = references[1:]
+                if caption_references:
+                    caption = Message(
+                        chat=msg.chat,
+                        uid=dump_message_ids(caption_references),
+                    )
+                    self.send_status(MessageRemoval(self, self, caption))
+                if msg.text:
+                    caption_reference = self.send_text(chat_uid, msg)
+                    if caption_reference is None:
+                        raise EFBMessageError("发送失败，请在手机端确认")
+                    msg.uid = dump_message_ids([media_reference, caption_reference])
+                else:
+                    msg.uid = media_reference
+                return msg
+
+            self.send_status(MessageRemoval(self, self, msg))
+
+        if msg.text and not msg.edit:
             match = re.search(self.forward_pattern, msg.text)
             if match:
                 if match.group(1) == hashlib.md5(self.channel_id.encode('utf-8')).hexdigest():
