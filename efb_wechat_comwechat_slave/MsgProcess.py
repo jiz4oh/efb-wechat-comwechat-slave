@@ -1,14 +1,8 @@
 from typing import Union, List
-import base64
-import tempfile
 from .Utils import *
 from .MsgDeco import *
 import re
-import pydub
-import json
-from lxml import etree
 
-from ehforwarderbot import utils as efb_utils
 from ehforwarderbot.message import Message
 
 def MsgProcess(

@@ -1,10 +1,7 @@
 import logging
 import tempfile
-import threading
 from ehforwarderbot.types import MessageID
 import requests as requests
-import re
-import json
 import yaml
 from typing import Dict , Any, IO, Optional
 import pilk

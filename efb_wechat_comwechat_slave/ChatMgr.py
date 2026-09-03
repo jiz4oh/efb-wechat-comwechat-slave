@@ -1,8 +1,7 @@
 # coding: utf-8
 import logging
-from typing import Dict, Optional, List
+from typing import Optional, List
 
-from ehforwarderbot.channel import SlaveChannel
 from ehforwarderbot.chat import GroupChat, PrivateChat, ChatMember, SystemChat
 
 from .CustomTypes import EFBGroupChat, EFBGroupMember, EFBPrivateChat, EFBSystemUser

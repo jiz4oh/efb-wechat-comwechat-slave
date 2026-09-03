@@ -8,15 +8,13 @@ import os
 import base64
 import contextlib
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 import re
 import json
 import secrets
-from ehforwarderbot.chat import GroupChat, SystemChat, PrivateChat , SystemChatMember, ChatMember, SelfChatMember
+from ehforwarderbot.chat import GroupChat, SystemChatMember, ChatMember
 import hashlib
-from typing import Tuple, Optional, Collection, BinaryIO, Dict, Any , Union , List
-from datetime import datetime
+from typing import Optional, Collection, BinaryIO, Dict, Any , Union , List
 from cachetools import TTLCache
 
 from ehforwarderbot import MsgType, Chat, Message, Status, coordinator
@@ -28,7 +26,7 @@ from . import __version__ as version
 from ehforwarderbot.channel import SlaveChannel
 from ehforwarderbot.types import MessageID, ChatID, InstanceID
 from ehforwarderbot import utils as efb_utils
-from ehforwarderbot.exceptions import EFBException, EFBChatNotFound, EFBMessageError, EFBOperationNotSupported
+from ehforwarderbot.exceptions import EFBChatNotFound, EFBMessageError, EFBOperationNotSupported
 from ehforwarderbot.message import MessageCommand, MessageCommands
 from ehforwarderbot.status import MessageRemoval, ChatUpdates, MemberUpdates
 
@@ -49,10 +47,6 @@ from .Utils import (
 from .db import DatabaseManager
 from .dbkey import DbKeyManager
 
-from rich.console import Console
-from rich import print as rprint
-from io import BytesIO
-from PIL import Image
 from typing import Callable
 
 VOICE_DATABASE_NAMES = ("MediaMSG0.db", "MediaMSG1.db", "MediaMSG2.db")
@@ -379,7 +373,6 @@ class ComWeChatChannel(SlaveChannel):
             self.logger.debug(f"card_msg:{msg}")
             sender = msg["sender"]
             wxid = msg["wxid"]
-            content = {}
             name = self.get_name_by_wxid(sender)
 
             bigheadimgurl = re.search('bigheadimgurl="(.*?)"', msg["message"]).group(1)
@@ -387,7 +380,6 @@ class ComWeChatChannel(SlaveChannel):
             province = re.search('province="(.*?)"', msg["message"]).group(1)
             city = re.search('city="(.*?)"', msg["message"]).group(1)
             sex = re.search('sex="(.*?)"', msg["message"]).group(1)
-            username = re.search('username="(.*?)"', msg["message"]).group(1)
 
             text = "名片信息:\n"
             if nickname:
@@ -405,14 +397,6 @@ class ComWeChatChannel(SlaveChannel):
                     text += "性别: 女\n"
             if bigheadimgurl:
                 text += f"头像: {bigheadimgurl}\n"
-
-            commands = [
-                MessageCommand(
-                    name=("Add To Friend"),
-                    callable_name="add_friend",
-                    kwargs={"v3" : username},
-                )
-            ]
 
             if "@chatroom" in sender:
                 chat = ChatMgr.build_efb_chat_as_group(EFBGroupChat(
@@ -456,7 +440,7 @@ class ComWeChatChannel(SlaveChannel):
         
         # 检查是否返回了 JSON 数据（已登录）
         try:
-            json_result = json.loads(result)
+            json.loads(result)
             return None
         except Exception:
             return self.save_qr_code(result)

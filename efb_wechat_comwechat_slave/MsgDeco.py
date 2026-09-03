@@ -387,7 +387,7 @@ def efb_share_link_wrapper(
                             result_text += f"\n转发自公众号[{sourcedisplayname}(id: {sourceusername})]\n\n"
                         except:
                             result_text += f"\n转发自公众号[{sourcedisplayname}]\n\n"
-                except Exception as e:
+                except Exception:
                     print_exc()
                 if title is not None and url is not None:
                     attribute = LinkAttribute(
@@ -445,7 +445,7 @@ def efb_share_link_wrapper(
                 for data in parse_chat_history(recordinfo_root):
                     texts.append(data['formatted'])
                 forward_content = "\n".join(texts)
-            except Exception as e:
+            except Exception:
                 forward_content = xml.xpath('/msg/appmsg/des/text()')[0]
 
             result_text += f"{msg_title}\n\n{forward_content}"
@@ -671,7 +671,7 @@ def efb_share_link_wrapper(
                     text= f"退还微信转账 {money} 元",
                     vendor_specific={ "is_mp": False }
                 )
-    except Exception as e:
+    except Exception:
         print_exc()
 
     try:

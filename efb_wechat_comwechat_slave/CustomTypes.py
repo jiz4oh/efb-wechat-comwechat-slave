@@ -1,7 +1,4 @@
-from typing import Optional, Dict
-
-from ehforwarderbot.channel import SlaveChannel
-
+from typing import Dict
 
 class EFBGroupChat(Dict):
     channel: str

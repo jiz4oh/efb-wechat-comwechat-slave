@@ -2,7 +2,6 @@ import logging
 
 from peewee import (
     CharField,
-    DoesNotExist,
     Model,
     TextField,
 )
