@@ -1,6 +1,7 @@
 import logging
 import tempfile
 import threading
+import time
 import requests as requests
 import re
 import json
@@ -25,11 +26,18 @@ def load_config(path : str) -> Dict[str, None]:
         config: Dict[str, Any] = d
     return config
 
-def download_file(url: str, retry: int = 3) -> tempfile:
+def download_file(url: str, retry: int = 5, retry_interval: float = 5.0) -> tempfile:
     """
-    A function that downloads files from given URL
+    Download a file from the given URL with retries.
+    Improvements over the original:
+    - Check HTTP status code: 404/403 etc. raise and go through retries.
+      Previously unchecked, CDN error pages were treated as valid images,
+      causing silent loss on the Telegram side (not even a fallback message).
+    - Retry with interval, for CDN sync delays (immediate retries mostly fail).
+    - Reset file pointer to the beginning before returning.
     Remember to close the file once you are done with the file!
-    :param retry: The max retries before giving up
+    :param retry: Max attempts before giving up
+    :param retry_interval: Seconds to wait before each retry
     :param url: The URL that points to the file
     """
     count = 1
@@ -37,16 +45,19 @@ def download_file(url: str, retry: int = 3) -> tempfile:
         try:
             file = tempfile.NamedTemporaryFile()
             r = requests.get(url, stream=True, timeout=10)
+            r.raise_for_status()
             for chunk in r.iter_content(chunk_size=1024):
                 if chunk:
                     file.write(chunk)
                     file.flush()
+            file.seek(0)
         except Exception as e:
-            logging.getLogger(__name__).warning(f"Error occurred when downloading {url}. {e}")
+            logging.getLogger(__name__).warning(f"Error occurred when downloading {url} (attempt {count}/{retry}). {e}")
             if count >= retry:
                 logging.getLogger(__name__).warning(f"Maximum retry reached. Giving up.")
                 raise e
             count += 1
+            time.sleep(retry_interval)
         else:
             break
     return file
