@@ -33,7 +33,7 @@ from .ChatMgr import ChatMgr
 from .CustomTypes import EFBGroupChat, EFBPrivateChat, EFBGroupMember, EFBSystemUser
 from .MsgDeco import qutoed_text
 from .MsgProcess import MsgProcess, MsgWrapper
-from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION
+from .Utils import download_file , load_config , load_temp_file_to_local , WC_EMOTICON_CONVERSION , is_emoticon_share , emoticon_cdn_url , emoticon_full_urls
 from .db import DatabaseManager
 from .Constant import QUOTE_MESSAGE
 
@@ -502,7 +502,12 @@ class ComWeChatChannel(SlaveChannel):
                 return
 
         try:
-            if ("FileStorage" in msg["filepath"]) and ("Cache" not in msg["filepath"]):
+            # 表情包(share/appmsg type=8):有 CDN 地址就跳过延迟队列直接处理。
+            # 大表情包以加密文件形式传输,本地文件永不出现,进延迟队列必超时,
+            # 故有 cdnurl 或 emojiinfo 地址时直接走 CDN 通道(不行则快速失败)。
+            if is_emoticon_share(msg) and (emoticon_cdn_url(msg) or emoticon_full_urls(msg)):
+                pass
+            elif ("FileStorage" in msg["filepath"]) and ("Cache" not in msg["filepath"]):
                 msg["timestamp"] = int(time.time())
                 msg["filepath"] = msg["filepath"].replace("\\","/")
                 msg["filepath"] = f'''{self.dir}{msg["filepath"]}'''
